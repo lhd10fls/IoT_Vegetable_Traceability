@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="public-hero">
+    <h1>Truy xuất nguồn gốc rau sạch</h1>
+    <p class="tag">Mã lô: <strong>{{ batch.batch_id }}</strong></p>
+    {% if is_verified %}
+        <div class="verify ok-bg">✓ Dữ liệu hợp lệ, chưa phát hiện thay đổi</div>
+    {% else %}
+        <div class="verify bad-bg">⚠ Cảnh báo: dữ liệu có thể đã bị chỉnh sửa</div>
+    {% endif %}
+</section>
+
+<section class="card">
+    <h2>Thông tin sản phẩm</h2>
+    <div class="info-grid">
+        <p><strong>Sản phẩm:</strong> {{ batch.product_name }}</p>
+        <p><strong>Nông trại:</strong> {{ batch.farm_name }}</p>
+        <p><strong>Địa điểm:</strong> {{ batch.farm_location }}</p>
+        <p><strong>Ngày gieo trồng:</strong> {{ batch.planting_date }}</p>
+        <p><strong>Ngày thu hoạch:</strong> {{ batch.harvest_date }}</p>
+    </div>
+</section>
+
+<section class="card">
+    <h2>Chỉ số môi trường trung bình</h2>
+    <div class="metric-grid">
+        <div class="metric"><span>Nhiệt độ</span><strong>{{ avg_temperature if avg_temperature is not none else "--" }}°C</strong></div>
+        <div class="metric"><span>Độ ẩm không khí</span><strong>{{ avg_air_humidity if avg_air_humidity is not none else "--" }}%</strong></div>
+        <div class="metric"><span>Độ ẩm đất</span><strong>{{ avg_soil_moisture if avg_soil_moisture is not none else "--" }}%</strong></div>
+    </div>
+</section>
+
+<section class="card">
+    <h2>Timeline nguồn gốc</h2>
+    {% if events %}
+    <ol class="timeline">
+        {% for e in events %}
+        <li>
+            <strong>{{ e.event_type }}</strong> - {{ e.description }}
+            <br><span>{{ e.event_time }} · {{ e.actor }} · {{ e.location }}</span>
+            {% if verify_event(e) %}<em class="ok">Hash hợp lệ</em>{% else %}<em class="bad">Hash không khớp</em>{% endif %}
+        </li>
+        {% endfor %}
+    </ol>
+    {% else %}
+    <p>Chưa có timeline.</p>
+    {% endif %}
+</section>
+
+<section class="card">
+    <h2>Dữ liệu cảm biến gần đây</h2>
+    {% if readings %}
+    <table>
+        <thead>
+        <tr><th>Thời gian</th><th>Nhiệt độ</th><th>Độ ẩm KK</th><th>Độ ẩm đất</th><th>Trạng thái</th><th>Xác thực</th></tr>
+        </thead>
+        <tbody>
+        {% for r in readings %}
+        <tr>
+            <td>{{ r.created_at }}</td>
+            <td>{{ r.temperature }}°C</td>
+            <td>{{ r.air_humidity }}%</td>
+            <td>{{ r.soil_moisture }}%</td>
+            <td>{{ status_label(r.status) }}</td>
+            <td>{% if verify_sensor(r) %}<span class="ok">Hợp lệ</span>{% else %}<span class="bad">Bị sửa</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>Chưa có dữ liệu IoT.</p>
+    {% endif %}
+</section>
+{% endblock %}

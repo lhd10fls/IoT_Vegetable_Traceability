@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="vi">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ title or "Truy xuất rau sạch IoT" }}</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<header class="topbar">
+    <a class="brand" href="/">🌱 TraceVeg IoT</a>
+    <nav>
+        <a href="/">Dashboard</a>
+        <a href="/batches/new">Tạo lô rau</a>
+        <form action="/demo/seed" method="post" class="inline-form">
+            <button class="link-button" type="submit">Tạo demo VEG-001</button>
+        </form>
+    </nav>
+</header>
+<main class="container">
+    {% block content %}{% endblock %}
+</main>
+<footer class="footer">
+    MVP demo: ESP32 → FastAPI → QR Trace Page → Hash Verification
+</footer>
+</body>
+</html>

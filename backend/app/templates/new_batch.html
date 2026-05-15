@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card narrow">
+    <h1>Tạo lô rau mới</h1>
+    <form action="/batches" method="post" class="form">
+        <label>Mã lô</label>
+        <input name="batch_id" value="VEG-001" required>
+
+        <label>Tên sản phẩm</label>
+        <input name="product_name" value="Rau cải xanh" required>
+
+        <label>Tên nông trại</label>
+        <input name="farm_name" value="HUST Smart Farm" required>
+
+        <label>Địa điểm</label>
+        <input name="farm_location" value="Hà Nội" required>
+
+        <label>Ngày gieo trồng</label>
+        <input type="date" name="planting_date" value="2026-05-01" required>
+
+        <label>Ngày thu hoạch</label>
+        <input type="date" name="harvest_date" value="2026-05-15" required>
+
+        <button class="primary-btn" type="submit">Tạo lô và sinh QR</button>
+    </form>
+</section>
+{% endblock %}

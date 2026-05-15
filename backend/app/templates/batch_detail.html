@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+    <div class="two-col">
+        <div>
+            <h1>{{ batch.product_name }} - {{ batch.batch_id }}</h1>
+            <p><strong>Nông trại:</strong> {{ batch.farm_name }}</p>
+            <p><strong>Địa điểm:</strong> {{ batch.farm_location }}</p>
+            <p><strong>Gieo trồng:</strong> {{ batch.planting_date }}</p>
+            <p><strong>Thu hoạch:</strong> {{ batch.harvest_date }}</p>
+            <p><strong>Link truy xuất:</strong> <a href="{{ base_url }}/trace/{{ batch.batch_id }}" target="_blank">{{ base_url }}/trace/{{ batch.batch_id }}</a></p>
+        </div>
+        <div>
+            {% if batch.qr_path %}
+            <img class="qr" src="{{ batch.qr_path }}" alt="QR {{ batch.batch_id }}">
+            <p class="muted">In hoặc dán QR này lên hộp rau.</p>
+            {% endif %}
+        </div>
+    </div>
+</section>
+
+<section class="card">
+    <h2>Thêm sự kiện truy xuất</h2>
+    <form action="/batches/{{ batch.batch_id }}/events" method="post" class="form-row">
+        <input name="event_type" placeholder="Ví dụ: VAN_CHUYEN" required>
+        <input name="description" placeholder="Mô tả sự kiện" required>
+        <input name="actor" placeholder="Người/đơn vị thực hiện" required>
+        <input name="location" placeholder="Địa điểm" required>
+        <input name="event_time" placeholder="Để trống để lấy giờ hiện tại">
+        <button class="primary-btn" type="submit">Thêm</button>
+    </form>
+</section>
+
+<section class="card">
+    <h2>Timeline truy xuất</h2>
+    {% if events %}
+    <table>
+        <thead>
+        <tr><th>Thời gian</th><th>Loại</th><th>Mô tả</th><th>Người thực hiện</th><th>Vị trí</th><th>Hash</th><th>Xác thực</th></tr>
+        </thead>
+        <tbody>
+        {% for e in events %}
+        <tr>
+            <td>{{ e.event_time }}</td>
+            <td>{{ e.event_type }}</td>
+            <td>{{ e.description }}</td>
+            <td>{{ e.actor }}</td>
+            <td>{{ e.location }}</td>
+            <td><code>{{ e.event_hash[:12] }}...</code></td>
+            <td>{% if verify_event(e) %}<span class="ok">Hợp lệ</span>{% else %}<span class="bad">Bị sửa</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>Chưa có sự kiện.</p>
+    {% endif %}
+</section>
+
+<section class="card">
+    <h2>Dữ liệu cảm biến IoT</h2>
+    <p class="muted">ESP32 gửi JSON tới <code>POST /api/iot/sensor-data</code>.</p>
+    <pre class="code">curl -X POST {{ base_url }}/api/iot/sensor-data \
+  -H "Content-Type: application/json" \
+  -d '{"device_id":"ESP32_FARM_01","batch_id":"{{ batch.batch_id }}","temperature":27.5,"air_humidity":72,"soil_moisture":63,"light":820}'</pre>
+    {% if readings %}
+    <table>
+        <thead>
+        <tr><th>ID</th><th>Thời gian</th><th>Thiết bị</th><th>Nhiệt độ</th><th>Độ ẩm KK</th><th>Độ ẩm đất</th><th>Ánh sáng</th><th>Trạng thái</th><th>Hash</th><th>Xác thực</th><th>Demo</th></tr>
+        </thead>
+        <tbody>
+        {% for r in readings %}
+        <tr>
+            <td>{{ r.id }}</td>
+            <td>{{ r.created_at }}</td>
+            <td>{{ r.device_id }}</td>
+            <td>{{ r.temperature }}°C</td>
+            <td>{{ r.air_humidity }}%</td>
+            <td>{{ r.soil_moisture }}%</td>
+            <td>{{ r.light }}</td>
+            <td>{{ status_label(r.status) }}</td>
+            <td><code>{{ r.data_hash[:12] }}...</code></td>
+            <td>{% if verify_sensor(r) %}<span class="ok">Hợp lệ</span>{% else %}<span class="bad">Bị sửa</span>{% endif %}</td>
+            <td>
+                <form action="/demo/tamper-reading/{{ r.id }}" method="post">
+                    <button class="danger-btn" type="submit">Sửa giả lập</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>Chưa có dữ liệu cảm biến.</p>
+    {% endif %}
+</section>
+{% endblock %}

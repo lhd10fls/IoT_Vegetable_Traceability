@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+    <h1>Hệ thống truy xuất nguồn gốc rau sạch</h1>
+    <p>Quản lý lô rau, nhận dữ liệu IoT từ ESP32, tạo QR code và kiểm tra tính toàn vẹn dữ liệu bằng SHA-256 hash.</p>
+    <a class="primary-btn" href="/batches/new">+ Tạo lô rau mới</a>
+</section>
+
+<section class="card">
+    <h2>Danh sách lô rau</h2>
+    {% if batches %}
+    <div class="grid">
+        {% for batch in batches %}
+        <article class="batch-card">
+            <h3>{{ batch.product_name }}</h3>
+            <p><strong>Mã lô:</strong> {{ batch.batch_id }}</p>
+            <p><strong>Nông trại:</strong> {{ batch.farm_name }}</p>
+            <p><strong>Vị trí:</strong> {{ batch.farm_location }}</p>
+            {% if batch.qr_path %}
+            <img class="qr-small" src="{{ batch.qr_path }}" alt="QR {{ batch.batch_id }}">
+            {% endif %}
+            <div class="actions">
+                <a class="secondary-btn" href="/batches/{{ batch.batch_id }}">Quản lý</a>
+                <a class="secondary-btn" href="/trace/{{ batch.batch_id }}" target="_blank">Trang QR</a>
+            </div>
+        </article>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p>Chưa có lô rau nào. Bấm “Tạo demo VEG-001” hoặc tạo lô mới.</p>
+    {% endif %}
+</section>
+{% endblock %}
