@@ -1,194 +1,283 @@
-from datetime import datetime, date, timedelta
-import hashlib
 import math
+import os
 import random
+from datetime import datetime, timedelta
 
-from app.database import SessionLocal, engine, Base
+from app.database import Base, SessionLocal, engine
 from app.models import Batch, SensorReading, TraceEvent
+from app.services.hash_service import make_event_hash, make_sensor_hash
+from app.services.qr_service import generate_qr
+from app.services.sensor_service import calculate_status
 
 
-def make_hash(*values) -> str:
-    raw = "|".join(str(v) for v in values)
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+def to_iso(dt) -> str:
+    """Chuyển datetime → ISO string, hoặc giữ nguyên nếu đã là string."""
+    if isinstance(dt, datetime):
+        return dt.isoformat(timespec="seconds")
+    return str(dt)
 
 
-def get_status(temperature: float, air_humidity: float, soil_moisture: float) -> str:
-    if temperature > 35:
-        return "WARNING_TEMPERATURE_HIGH"
-    if soil_moisture < 30:
-        return "WARNING_SOIL_DRY"
-    if air_humidity < 40:
-        return "WARNING_AIR_HUMIDITY_LOW"
-    return "NORMAL"
+def get_base_url() -> str:
+    return os.getenv("APP_BASE_URL", "http://localhost:8000").rstrip("/")
 
 
-def seed_batch_veg_001(db):
-    batch_id = "VEG-001"
+# ─── CẤU HÌNH 5 LÔ SẢN PHẨM ──────────────────────────────────────────────────
+BATCHES = [
+    {
+        "batch_id": "VEG-001",
+        "product_name": "Rau cải xanh",
+        "farm_name": "HUST Smart Farm",
+        "farm_location": "Đông Anh, Hà Nội",
+        "planting_date": "2026-05-01",
+        "harvest_date": "2026-05-15",
+        "device_id": "ESP32_FARM_01",
+        "total_days": 15,
+        "start_date": datetime(2026, 5, 1, 6, 0),
+        "temp_base": 27, "temp_amplitude": 5,
+        "humidity_base": 70, "humidity_amplitude": 8,
+        "soil_base": 68, "soil_decay": 1.5,
+        "watering_days": [4, 8, 12], "watering_boost": 12,
+        "light_base": 600, "light_range": 300,
+        "events": [
+            {"event_type": "GIEO_TRONG",    "description": "Gieo trồng rau cải xanh tại khu nhà lưới số 1.",            "actor": "HUST Smart Farm",             "location": "Đông Anh, Hà Nội",          "offset_days": 0,  "offset_hours": 7},
+            {"event_type": "KIEM_TRA_DAT",  "description": "Kiểm tra độ ẩm đất và điều kiện sinh trưởng ban đầu.",      "actor": "Kỹ thuật viên nông trại",      "location": "HUST Smart Farm",           "offset_days": 1,  "offset_hours": 8},
+            {"event_type": "TUOI_NUOC",     "description": "Tưới nước định kỳ, độ ẩm đất đạt mức phù hợp.",            "actor": "Hệ thống tưới tự động",        "location": "HUST Smart Farm",           "offset_days": 5,  "offset_hours": 6},
+            {"event_type": "CHAM_SOC",      "description": "Theo dõi sinh trưởng, không phát hiện sâu bệnh bất thường.","actor": "Nhân viên nông trại",           "location": "HUST Smart Farm",           "offset_days": 10, "offset_hours": 9},
+            {"event_type": "THU_HOACH",     "description": "Thu hoạch rau cải xanh, phân loại theo lô VEG-001.",        "actor": "HUST Smart Farm",             "location": "Đông Anh, Hà Nội",          "offset_days": 14, "offset_hours": 6},
+            {"event_type": "DONG_GOI",      "description": "Đóng gói sản phẩm, dán mã QR truy xuất nguồn gốc.",         "actor": "Bộ phận đóng gói",             "location": "Kho đóng gói HUST",         "offset_days": 14, "offset_hours": 8},
+            {"event_type": "VAN_CHUYEN",    "description": "Vận chuyển lô rau tới cửa hàng, điều kiện bảo quản ổn định.","actor": "GreenExpress Logistics",       "location": "Hà Nội",                    "offset_days": 14, "offset_hours": 10},
+            {"event_type": "NHAP_CUA_HANG", "description": "Cửa hàng nhận lô rau, kiểm tra QR và trạng thái sản phẩm.", "actor": "Cửa hàng rau sạch Cầu Giấy",  "location": "Cầu Giấy, Hà Nội",         "offset_days": 14, "offset_hours": 12},
+        ],
+    },
+    {
+        "batch_id": "VEG-002",
+        "product_name": "Cà chua bi VietGAP",
+        "farm_name": "Nông trại xanh Đà Lạt",
+        "farm_location": "Đức Trọng, Lâm Đồng",
+        "planting_date": "2026-04-10",
+        "harvest_date": "2026-05-10",
+        "device_id": "ESP32_FARM_02",
+        "total_days": 30,
+        "start_date": datetime(2026, 4, 10, 6, 0),
+        "temp_base": 20, "temp_amplitude": 6,
+        "humidity_base": 75, "humidity_amplitude": 6,
+        "soil_base": 72, "soil_decay": 1.2,
+        "watering_days": [3, 7, 11, 15, 19, 23, 27], "watering_boost": 15,
+        "light_base": 700, "light_range": 250,
+        "events": [
+            {"event_type": "GIEO_TRONG",    "description": "Gieo hạt cà chua bi trong nhà kính tại Đức Trọng.",          "actor": "Nông trại xanh Đà Lạt",       "location": "Đức Trọng, Lâm Đồng",      "offset_days": 0,  "offset_hours": 7},
+            {"event_type": "KIEM_TRA_DAT",  "description": "Kiểm tra pH đất 6.2-6.8, bón phân hữu cơ cân bằng.",        "actor": "Kỹ sư nông nghiệp",           "location": "Nông trại xanh Đà Lạt",    "offset_days": 2,  "offset_hours": 8},
+            {"event_type": "TUOI_NUOC",     "description": "Hệ thống nhỏ giọt tưới tự động, tiết kiệm 40% nước.",        "actor": "Hệ thống tưới nhỏ giọt",      "location": "Nông trại xanh Đà Lạt",    "offset_days": 7,  "offset_hours": 6},
+            {"event_type": "KIEM_TRA_BENH", "description": "Phát hiện rệp muội — xử lý bằng thuốc sinh học.",            "actor": "Kỹ thuật viên IPM",            "location": "Nông trại xanh Đà Lạt",    "offset_days": 15, "offset_hours": 9},
+            {"event_type": "CHAM_SOC",      "description": "Cắt tỉa nhánh, tăng thông khí, hỗ trợ đậu quả đều.",        "actor": "Nhân viên nông trại",          "location": "Nông trại xanh Đà Lạt",    "offset_days": 20, "offset_hours": 8},
+            {"event_type": "THU_HOACH",     "description": "Thu hoạch cà chua chín đỏ 85%, đạt chuẩn VietGAP.",          "actor": "Nông trại xanh Đà Lạt",       "location": "Đức Trọng, Lâm Đồng",      "offset_days": 29, "offset_hours": 6},
+            {"event_type": "DONG_GOI",      "description": "Rửa sạch, phân loại kích cỡ, đóng hộp 500g, dán QR.",       "actor": "Bộ phận đóng gói",             "location": "Kho lạnh Lâm Đồng",        "offset_days": 29, "offset_hours": 9},
+            {"event_type": "VAN_CHUYEN",    "description": "Xe lạnh vận chuyển Đà Lạt → TP.HCM, nhiệt độ 8-12°C.",     "actor": "FreshShip Logistics",          "location": "QL20, Lâm Đồng → TP.HCM", "offset_days": 29, "offset_hours": 14},
+            {"event_type": "NHAP_CUA_HANG", "description": "Co.opmart nhận hàng, kiểm tra QR và cảm quan sản phẩm.",     "actor": "Co.opmart Quận 7",             "location": "Quận 7, TP.HCM",           "offset_days": 30, "offset_hours": 8},
+        ],
+    },
+    {
+        "batch_id": "VEG-003",
+        "product_name": "Dưa leo baby hữu cơ",
+        "farm_name": "HTX Rau sạch Củ Chi",
+        "farm_location": "Củ Chi, TP.HCM",
+        "planting_date": "2026-04-25",
+        "harvest_date": "2026-05-15",
+        "device_id": "ESP32_FARM_03",
+        "total_days": 20,
+        "start_date": datetime(2026, 4, 25, 6, 0),
+        "temp_base": 32, "temp_amplitude": 4,
+        "humidity_base": 78, "humidity_amplitude": 5,
+        "soil_base": 75, "soil_decay": 2.0,
+        "watering_days": [2, 5, 8, 11, 14, 17], "watering_boost": 18,
+        "light_base": 750, "light_range": 200,
+        "events": [
+            {"event_type": "GIEO_TRONG",    "description": "Gieo dưa leo baby theo phương pháp hữu cơ, không hóa chất.",  "actor": "HTX Rau sạch Củ Chi",         "location": "Củ Chi, TP.HCM",           "offset_days": 0,  "offset_hours": 6},
+            {"event_type": "TUOI_NUOC",     "description": "Tưới phun sương buổi sáng và chiều mát, 2 lần/ngày.",          "actor": "Hệ thống tưới phun sương",    "location": "HTX Rau sạch Củ Chi",      "offset_days": 3,  "offset_hours": 6},
+            {"event_type": "KIEM_TRA_BENH", "description": "Kiểm tra bọ trĩ và nhện đỏ — không phát hiện bất thường.",    "actor": "Kỹ thuật viên nông nghiệp",   "location": "HTX Rau sạch Củ Chi",      "offset_days": 8,  "offset_hours": 9},
+            {"event_type": "CHAM_SOC",      "description": "Cắm cọc leo, định hướng dây leo, tăng năng suất thu hoạch.",   "actor": "Nhân viên HTX",               "location": "HTX Rau sạch Củ Chi",      "offset_days": 12, "offset_hours": 7},
+            {"event_type": "THU_HOACH",     "description": "Thu hoạch dưa leo baby khi dài 8-10cm, vỏ xanh bóng.",         "actor": "HTX Rau sạch Củ Chi",         "location": "Củ Chi, TP.HCM",           "offset_days": 19, "offset_hours": 5},
+            {"event_type": "DONG_GOI",      "description": "Đóng gói túi zip 300g, in nhãn hữu cơ, dán mã QR.",            "actor": "Bộ phận đóng gói HTX",        "location": "Kho HTX Củ Chi",           "offset_days": 19, "offset_hours": 8},
+            {"event_type": "VAN_CHUYEN",    "description": "Xe lạnh vận chuyển đến siêu thị, nhiệt độ duy trì 10°C.",      "actor": "CoolChain Express",            "location": "TP.HCM",                   "offset_days": 19, "offset_hours": 11},
+            {"event_type": "NHAP_CUA_HANG", "description": "Winmart nhận hàng, xác minh QR, bày bán ngay trong ngày.",     "actor": "Winmart Bình Thạnh",          "location": "Bình Thạnh, TP.HCM",       "offset_days": 20, "offset_hours": 7},
+        ],
+    },
+    {
+        "batch_id": "VEG-004",
+        "product_name": "Cải bắp Đà Lạt sạch",
+        "farm_name": "Langbiang Farm",
+        "farm_location": "Lạc Dương, Lâm Đồng",
+        "planting_date": "2026-03-20",
+        "harvest_date": "2026-05-10",
+        "device_id": "ESP32_FARM_04",
+        "total_days": 51,
+        "start_date": datetime(2026, 3, 20, 6, 0),
+        "temp_base": 17, "temp_amplitude": 7,
+        "humidity_base": 80, "humidity_amplitude": 7,
+        "soil_base": 70, "soil_decay": 0.8,
+        "watering_days": [5, 10, 15, 20, 25, 30, 35, 40, 45, 50], "watering_boost": 12,
+        "light_base": 550, "light_range": 300,
+        "events": [
+            {"event_type": "GIEO_TRONG",         "description": "Gieo cây con cải bắp từ hạt, ươm 2 tuần trước khi trồng.",          "actor": "Langbiang Farm",              "location": "Lạc Dương, Lâm Đồng",      "offset_days": 0,  "offset_hours": 7},
+            {"event_type": "KIEM_TRA_DAT",       "description": "Phân tích đất: pH 6.0-6.5, bổ sung vôi nông nghiệp.",               "actor": "Kỹ sư đất Langbiang",         "location": "Langbiang Farm",            "offset_days": 3,  "offset_hours": 8},
+            {"event_type": "TUOI_NUOC",          "description": "Tưới rãnh 2 lần/tuần, kiểm soát độ ẩm 65-75%.",                     "actor": "Hệ thống tưới rãnh",          "location": "Langbiang Farm",            "offset_days": 10, "offset_hours": 6},
+            {"event_type": "BON_PHAN",           "description": "Bón phân hữu cơ vi sinh theo quy trình VietGAP.",                   "actor": "Kỹ thuật viên canh tác",      "location": "Langbiang Farm",            "offset_days": 20, "offset_hours": 8},
+            {"event_type": "KIEM_TRA_BENH",      "description": "Phun thuốc sinh học ngăn nấm mốc do thời tiết ẩm cao.",             "actor": "Đội IPM Langbiang",           "location": "Langbiang Farm",            "offset_days": 35, "offset_hours": 9},
+            {"event_type": "THU_HOACH",          "description": "Thu hoạch bắp cải 1.2-1.5kg/bắp, đạt chuẩn xuất bán.",             "actor": "Langbiang Farm",              "location": "Lạc Dương, Lâm Đồng",      "offset_days": 50, "offset_hours": 6},
+            {"event_type": "DONG_GOI",           "description": "Bó lưới bảo vệ, dán mã QR, đóng thùng carton.",                    "actor": "Bộ phận đóng gói Langbiang",  "location": "Kho lạnh Langbiang",       "offset_days": 50, "offset_hours": 10},
+            {"event_type": "VAN_CHUYEN",         "description": "Xe tải lạnh vận chuyển lên Hà Nội, 1500km, 24h.",                  "actor": "VietFresh Transport",         "location": "QL1, Lâm Đồng → Hà Nội",  "offset_days": 50, "offset_hours": 14},
+            {"event_type": "NHAP_CUA_HANG",      "description": "BigC nhận hàng, kiểm tra chất lượng và QR, lên kệ.",               "actor": "BigC Royal City Hà Nội",      "location": "Thanh Xuân, Hà Nội",       "offset_days": 51, "offset_hours": 10},
+        ],
+    },
+    {
+        "batch_id": "VEG-005",
+        "product_name": "Xà lách thủy canh NFT",
+        "farm_name": "GreenHouse Hà Nội",
+        "farm_location": "Gia Lâm, Hà Nội",
+        "planting_date": "2026-04-20",
+        "harvest_date": "2026-05-15",
+        "device_id": "ESP32_FARM_05",
+        "total_days": 25,
+        "start_date": datetime(2026, 4, 20, 6, 0),
+        # Thủy canh: nhiệt độ rất ổn định, độ ẩm cao, không cần tưới thêm
+        "temp_base": 25, "temp_amplitude": 2,
+        "humidity_base": 85, "humidity_amplitude": 3,
+        "soil_base": 92, "soil_decay": 0.0,
+        "watering_days": [], "watering_boost": 0,
+        "light_base": 420, "light_range": 100,
+        "events": [
+            {"event_type": "GIEO_TRONG",          "description": "Gieo hạt xà lách vào giá thể rockwool, đặt vào hệ NFT.",       "actor": "GreenHouse Hà Nội",           "location": "Gia Lâm, Hà Nội",          "offset_days": 0,  "offset_hours": 8},
+            {"event_type": "KIEM_TRA_DD",         "description": "Kiểm tra EC dung dịch dinh dưỡng: 1.2 mS/cm, pH 5.8-6.2.",   "actor": "Kỹ sư thủy canh",             "location": "GreenHouse Hà Nội",         "offset_days": 3,  "offset_hours": 9},
+            {"event_type": "DIEU_CHINH_DD",       "description": "Bổ sung dung dịch dinh dưỡng A+B, EC điều chỉnh lên 1.5.",   "actor": "Hệ thống tự động GreenHouse", "location": "GreenHouse Hà Nội",         "offset_days": 10, "offset_hours": 8},
+            {"event_type": "KIEM_TRA_CHAT_LUONG", "description": "Lá xanh đồng đều, không vàng lá, sinh trưởng đúng tiến độ.", "actor": "QC GreenHouse",               "location": "GreenHouse Hà Nội",         "offset_days": 18, "offset_hours": 10},
+            {"event_type": "THU_HOACH",           "description": "Thu hoạch xà lách 150g/bụi, cắt cả cây, giữ rễ tươi.",       "actor": "GreenHouse Hà Nội",           "location": "Gia Lâm, Hà Nội",          "offset_days": 24, "offset_hours": 6},
+            {"event_type": "DONG_GOI",            "description": "Đóng hộp nhựa thoáng khí 200g, dán QR truy xuất nguồn gốc.", "actor": "Bộ phận đóng gói GreenHouse", "location": "Gia Lâm, Hà Nội",          "offset_days": 24, "offset_hours": 8},
+            {"event_type": "VAN_CHUYEN",          "description": "Giao hàng trong ngày bằng xe điện lạnh nội thành Hà Nội.",   "actor": "EcoDelivery Hà Nội",          "location": "Hà Nội",                   "offset_days": 24, "offset_hours": 10},
+            {"event_type": "NHAP_CUA_HANG",       "description": "Organica nhận hàng, xác minh QR, bày bán ngay trong ngày.",  "actor": "Organica Tây Hồ",             "location": "Tây Hồ, Hà Nội",           "offset_days": 25, "offset_hours": 7},
+        ],
+    },
+]
 
-    existing_batch = db.query(Batch).filter(Batch.batch_id == batch_id).first()
-    if not existing_batch:
+
+# ─── HÀM SEED CHUNG ────────────────────────────────────────────────────────────
+def seed_batch(db, cfg: dict, base_url: str) -> None:
+    batch_id = cfg["batch_id"]
+
+    # ── 1. Tạo Batch ──────────────────────────────────────────────────────────
+    existing = db.query(Batch).filter(Batch.batch_id == batch_id).first()
+    if not existing:
+        qr_path = generate_qr(batch_id=batch_id, base_url=base_url)
         batch = Batch(
             batch_id=batch_id,
-            product_name="Rau cải xanh",
-            farm_name="HUST Smart Farm",
-            farm_location="Hà Nội",
-            planting_date=date(2026, 5, 1),
-            harvest_date=date(2026, 5, 15),
+            product_name=cfg["product_name"],
+            farm_name=cfg["farm_name"],
+            farm_location=cfg["farm_location"],
+            planting_date=cfg["planting_date"],
+            harvest_date=cfg["harvest_date"],
+            qr_path=qr_path,
+            created_at=to_iso(cfg["start_date"]),
         )
         db.add(batch)
         db.commit()
+        print(f"  ✅ Batch {batch_id} — QR: {qr_path}")
+    else:
+        print(f"  ⏭  Batch {batch_id} đã tồn tại, bỏ qua.")
 
-    existing_events = db.query(TraceEvent).filter(TraceEvent.batch_id == batch_id).count()
-    if existing_events == 0:
-        events = [
-            {
-                "event_type": "GIEO_TRONG",
-                "description": "Gieo trồng rau cải xanh tại khu nhà lưới số 1.",
-                "actor": "HUST Smart Farm",
-                "location": "Hà Nội",
-                "event_time": datetime(2026, 5, 1, 7, 30),
-            },
-            {
-                "event_type": "KIEM_TRA_DAT",
-                "description": "Kiểm tra độ ẩm đất và điều kiện sinh trưởng ban đầu.",
-                "actor": "Kỹ thuật viên nông trại",
-                "location": "HUST Smart Farm",
-                "event_time": datetime(2026, 5, 2, 8, 0),
-            },
-            {
-                "event_type": "TUOI_NUOC",
-                "description": "Tưới nước định kỳ, độ ẩm đất đạt mức phù hợp.",
-                "actor": "Hệ thống tưới",
-                "location": "HUST Smart Farm",
-                "event_time": datetime(2026, 5, 5, 6, 30),
-            },
-            {
-                "event_type": "CHAM_SOC",
-                "description": "Theo dõi sinh trưởng, không phát hiện sâu bệnh bất thường.",
-                "actor": "Nhân viên nông trại",
-                "location": "HUST Smart Farm",
-                "event_time": datetime(2026, 5, 10, 9, 0),
-            },
-            {
-                "event_type": "THU_HOACH",
-                "description": "Thu hoạch rau cải xanh, phân loại theo lô VEG-001.",
-                "actor": "HUST Smart Farm",
-                "location": "Hà Nội",
-                "event_time": datetime(2026, 5, 15, 6, 45),
-            },
-            {
-                "event_type": "DONG_GOI",
-                "description": "Đóng gói sản phẩm, dán mã QR truy xuất nguồn gốc.",
-                "actor": "Bộ phận đóng gói",
-                "location": "Kho đóng gói HUST Smart Farm",
-                "event_time": datetime(2026, 5, 15, 8, 30),
-            },
-            {
-                "event_type": "VAN_CHUYEN",
-                "description": "Vận chuyển lô rau tới cửa hàng, điều kiện bảo quản ổn định.",
-                "actor": "Đơn vị vận chuyển GreenExpress",
-                "location": "Hà Nội",
-                "event_time": datetime(2026, 5, 15, 10, 0),
-            },
-            {
-                "event_type": "NHAP_CUA_HANG",
-                "description": "Cửa hàng nhận lô rau, kiểm tra QR và trạng thái sản phẩm.",
-                "actor": "Cửa hàng rau sạch",
-                "location": "Cầu Giấy, Hà Nội",
-                "event_time": datetime(2026, 5, 15, 12, 0),
-            },
-        ]
-
-        for item in events:
-            event_hash = make_hash(
-                batch_id,
-                item["event_type"],
-                item["description"],
-                item["actor"],
-                item["location"],
-                item["event_time"],
+    # ── 2. Trace Events ───────────────────────────────────────────────────────
+    if db.query(TraceEvent).filter(TraceEvent.batch_id == batch_id).count() == 0:
+        for item in cfg["events"]:
+            event_time = cfg["start_date"] + timedelta(
+                days=item["offset_days"], hours=item["offset_hours"]
             )
-
-            event = TraceEvent(
-                batch_id=batch_id,
-                event_type=item["event_type"],
-                description=item["description"],
-                actor=item["actor"],
-                location=item["location"],
-                event_time=item["event_time"],
-                event_hash=event_hash,
-            )
-            db.add(event)
-
+            event_time_str = to_iso(event_time)
+            payload = {
+                "batch_id":    batch_id,
+                "event_type":  item["event_type"],
+                "description": item["description"],
+                "actor":       item["actor"],
+                "location":    item["location"],
+                "event_time":  event_time_str,
+            }
+            db.add(TraceEvent(**payload, event_hash=make_event_hash(payload)))
         db.commit()
+        print(f"  ✅ {len(cfg['events'])} trace events cho {batch_id}")
 
-    existing_readings = db.query(SensorReading).filter(SensorReading.batch_id == batch_id).count()
-    if existing_readings == 0:
-        random.seed(42)
+    # ── 3. Sensor Readings ────────────────────────────────────────────────────
+    if db.query(SensorReading).filter(SensorReading.batch_id == batch_id).count() == 0:
+        random.seed(hash(batch_id) % (2**32))  # seed khác nhau mỗi lô
 
-        start_time = datetime(2026, 5, 1, 6, 0)
-        total_days = 15
-
-        for day in range(total_days):
+        readings_added = 0
+        for day in range(cfg["total_days"]):
             for hour in [6, 10, 14, 18, 22]:
-                current_time = start_time + timedelta(days=day, hours=hour - 6)
-
+                current_time = cfg["start_date"] + timedelta(days=day, hours=hour - 6)
                 day_ratio = hour / 24
 
-                temperature = 27 + 5 * math.sin(day_ratio * 2 * math.pi) + random.uniform(-0.8, 0.8)
-                air_humidity = 70 - 8 * math.sin(day_ratio * 2 * math.pi) + random.uniform(-2, 2)
+                temperature = round(
+                    cfg["temp_base"]
+                    + cfg["temp_amplitude"] * math.sin(day_ratio * 2 * math.pi)
+                    + random.uniform(-0.8, 0.8),
+                    2,
+                )
+                air_humidity = round(
+                    cfg["humidity_base"]
+                    - cfg["humidity_amplitude"] * math.sin(day_ratio * 2 * math.pi)
+                    + random.uniform(-2, 2),
+                    2,
+                )
 
-                base_soil = 68 - day * 1.5
-                if day in [4, 8, 12]:
-                    base_soil += 12
-                soil_moisture = base_soil + random.uniform(-2, 2)
+                base_soil = cfg["soil_base"] - cfg["soil_decay"] * day
+                if day in cfg["watering_days"]:
+                    base_soil += cfg["watering_boost"]
+                soil_moisture = round(max(20, min(95, base_soil + random.uniform(-2, 2))), 2)
 
                 if 6 <= hour <= 18:
-                    light = 600 + 300 * math.sin(day_ratio * math.pi) + random.uniform(-40, 40)
+                    light = round(
+                        cfg["light_base"]
+                        + cfg["light_range"] * math.sin(day_ratio * math.pi)
+                        + random.uniform(-40, 40),
+                        2,
+                    )
                 else:
-                    light = random.uniform(20, 80)
-
-                temperature = round(temperature, 2)
-                air_humidity = round(air_humidity, 2)
-                soil_moisture = round(max(20, min(90, soil_moisture)), 2)
+                    light = round(random.uniform(10, 60), 2)
                 light = round(max(0, light), 2)
 
-                status = get_status(temperature, air_humidity, soil_moisture)
+                status = calculate_status(temperature, air_humidity, soil_moisture)
+                created_at_str = to_iso(current_time)
 
-                data_hash = make_hash(
-                    "ESP32_FARM_01",
-                    batch_id,
-                    temperature,
-                    air_humidity,
-                    soil_moisture,
-                    light,
-                    current_time,
-                )
-
-                reading = SensorReading(
-                    device_id="ESP32_FARM_01",
-                    batch_id=batch_id,
-                    temperature=temperature,
-                    air_humidity=air_humidity,
-                    soil_moisture=soil_moisture,
-                    light=light,
-                    status=status,
-                    data_hash=data_hash,
-                    created_at=current_time,
-                )
-
-                db.add(reading)
+                payload = {
+                    "batch_id":     batch_id,
+                    "device_id":    cfg["device_id"],
+                    "temperature":  temperature,
+                    "air_humidity": air_humidity,
+                    "soil_moisture":soil_moisture,
+                    "light":        light,
+                    "status":       status,
+                    "created_at":   created_at_str,
+                }
+                db.add(SensorReading(**payload, data_hash=make_sensor_hash(payload)))
+                readings_added += 1
 
         db.commit()
+        print(f"  ✅ {readings_added} sensor readings cho {batch_id}")
 
 
+# ─── ENTRY POINT ───────────────────────────────────────────────────────────────
 def seed_all():
+    os.makedirs("app/static/qr", exist_ok=True)
     Base.metadata.create_all(bind=engine)
+
+    base_url = get_base_url()
+    print(f"\n{'='*55}")
+    print(f"  SEEDING {len(BATCHES)} lô sản phẩm | base_url={base_url}")
+    print(f"{'='*55}\n")
 
     db = SessionLocal()
     try:
-        seed_batch_veg_001(db)
-        print("Seed data created successfully.")
+        for cfg in BATCHES:
+            print(f"[{cfg['batch_id']}] {cfg['product_name']}")
+            seed_batch(db, cfg, base_url)
+            print()
+        print("✅ Seed data hoàn tất!")
     finally:
         db.close()
 

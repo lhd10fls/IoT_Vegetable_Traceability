@@ -1,0 +1,3 @@
+# This directory is intentionally kept in git.
+# QR code images (*.png) are generated at runtime and are excluded from version control.
+# Run: python regen_qr.py <base_url>  to regenerate them.
