@@ -1,8 +1,8 @@
-# 🌿 Vegetable Traceability IoT System
+# 🌿 Hệ Thống Truy Xuất Nguồn Gốc Rau Sạch IoT
 
-Hệ thống **truy xuất nguồn gốc rau sạch** sử dụng IoT (ESP32) + Python FastAPI + SQLite + SHA-256 hash integrity + QR Code.
+Hệ thống **truy xuất nguồn gốc thực phẩm** sử dụng IoT (ESP32) + Python FastAPI + SQLite + cơ chế toàn vẹn dữ liệu SHA-256 + QR Code.
 
-Người tiêu dùng **quét mã QR** trên bao bì để xem toàn bộ hành trình của lô rau: từ gieo trồng, chăm sóc, thu hoạch, đóng gói đến cửa hàng — cùng với dữ liệu cảm biến môi trường thực tế từ thiết bị IoT ESP32.
+> **Định hướng thiết kế**: Hệ thống áp dụng nguyên lý từ kiến trúc blockchain (hash chain, tamper detection, audit trail) vào nền tảng tập trung SQLite, phù hợp với môi trường triển khai thực tế tại các nông trại vừa và nhỏ — nơi không đủ hạ tầng chạy mạng blockchain phân tán.
 
 ---
 
@@ -10,27 +10,53 @@ Người tiêu dùng **quét mã QR** trên bao bì để xem toàn bộ hành t
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                        ESP32 (IoT Device)                        │
-│  DHT22 (Temp/Humidity) + Soil Moisture + Light Sensor            │
-│  → HTTP POST JSON → FastAPI /api/iot/sensor-data                 │
-└──────────────────────────────┬───────────────────────────────────┘
-                               │
-                               ▼
+│                     ESP32 (IoT Device)                           │
+│   DHT22 (Nhiệt độ / Độ ẩm KK)                                   │
+│   Cảm biến độ ẩm đất (Analog)                                    │
+│   Cảm biến ánh sáng (Analog)                                     │
+│   → HTTP POST JSON mỗi 10 giây                                   │
+└──────────────────────────┬───────────────────────────────────────┘
+                           │
+                           ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│                     FastAPI Backend (Python)                      │
-│  • Nhận dữ liệu IoT → tính SHA-256 hash → lưu SQLite            │
-│  • Quản lý lô sản phẩm (Batch) và sự kiện truy xuất             │
-│  • Tạo QR Code cho từng lô → link /trace/{batch_id}             │
-│  • Verify hash để phát hiện dữ liệu bị chỉnh sửa                │
-└──────────────────────────────┬───────────────────────────────────┘
-                               │
-                               ▼
-                    ┌──────────────────┐
-                    │  📱 Người dùng   │
-                    │  Quét QR → mở   │
-                    │  trang truy xuất │
-                    └──────────────────┘
+│                   FastAPI Backend (Python)                        │
+│                                                                  │
+│  Nhận dữ liệu IoT                                                │
+│       ↓                                                          │
+│  Tính SHA-256 hash của toàn bộ payload                           │
+│       ↓                                                          │
+│  Lưu data + hash vào SQLite                                      │
+│       ↓                                                          │
+│  Khi verify: recompute hash, so sánh với hash đã lưu            │
+│  → Phát hiện nếu data bị sửa mà hash không được cập nhật        │
+│                                                                  │
+│  Tạo QR Code → link /trace/{batch_id}                           │
+└──────────────────────────┬───────────────────────────────────────┘
+                           │
+                           ▼
+                ┌─────────────────────┐
+                │   📱 Người dùng     │
+                │   Quét QR           │
+                │   Xem nguồn gốc     │
+                │   Xem trạng thái    │
+                │   xác minh dữ liệu  │
+                └─────────────────────┘
 ```
+
+---
+
+## 📐 Giới Hạn Kỹ Thuật (Trung Thực)
+
+| Đặc điểm | Hệ thống này | Blockchain thật |
+|---|---|---|
+| **Lưu trữ** | Tập trung (1 file SQLite) | Phân tán (nhiều node) |
+| **Toàn vẹn dữ liệu** | SHA-256 hash (phát hiện sửa nửa vời) | Bất biến hoàn toàn |
+| **Ai kiểm soát** | Người sở hữu server | Phi tập trung |
+| **Tốc độ** | Rất nhanh (ms) | Chậm hơn (vài giây) |
+| **Chi phí** | Miễn phí | Gas fee (Ethereum) |
+| **Phù hợp với** | Demo, MVP, trang trại nhỏ | Chuỗi cung ứng lớn, nhiều bên |
+
+> ⚠️ **Lưu ý**: Cơ chế SHA-256 phát hiện được việc sửa dữ liệu **mà không cập nhật hash**. Nếu người có quyền truy cập DB sửa cả data lẫn hash đồng thời thì hệ thống không phát hiện được — đây là giới hạn của lưu trữ tập trung.
 
 ---
 
@@ -38,11 +64,11 @@ Người tiêu dùng **quét mã QR** trên bao bì để xem toàn bộ hành t
 
 ```
 vegetable-traceability/
-├── backend/                    # Python FastAPI server
+├── backend/                    # Hệ thống chính — FastAPI + SQLite
 │   ├── app/
 │   │   ├── main.py             # API routes + web pages
-│   │   ├── models.py           # SQLAlchemy models (Batch, SensorReading, TraceEvent)
-│   │   ├── schemas.py          # Pydantic input schema cho IoT API
+│   │   ├── models.py           # SQLAlchemy models
+│   │   ├── schemas.py          # Pydantic schema cho IoT API
 │   │   ├── database.py         # SQLite connection
 │   │   ├── seed_data.py        # Tạo sẵn 5 lô sản phẩm demo
 │   │   ├── services/
@@ -50,7 +76,7 @@ vegetable-traceability/
 │   │   │   ├── qr_service.py       # Tạo QR code PNG
 │   │   │   └── sensor_service.py   # Phân loại trạng thái cảm biến
 │   │   ├── templates/          # Jinja2 HTML templates
-│   │   └── static/             # CSS + QR images (generated)
+│   │   └── static/             # CSS + QR images (generated at runtime)
 │   ├── regen_qr.py             # Tiện ích tái tạo QR khi đổi URL
 │   ├── requirements.txt
 │   ├── render.yaml             # Deploy config cho Render.com
@@ -59,21 +85,19 @@ vegetable-traceability/
 │   ├── src/main.cpp
 │   ├── include/
 │   │   ├── config.h            # Pin mapping, device ID, interval
-│   │   └── secrets.example.h  # Template WiFi credentials (copy → secrets.h)
+│   │   └── secrets.example.h  # Template WiFi + Server URL
 │   └── platformio.ini
-├── docs/
-│   ├── api_design.md
-│   └── wiring.md
-└── .gitignore
+└── docs/
+    ├── api_design.md
+    └── wiring.md
 ```
 
 ---
 
-## ⚡ Khởi Động Nhanh (Local)
+## ⚡ Khởi Động Nhanh
 
 ### Yêu cầu
 - Python 3.10+
-- Git
 
 ### Bước 1 — Clone & Cài đặt
 
@@ -84,7 +108,8 @@ cd IoT_Vegetable_Traceability/backend
 # Tạo virtual environment
 python -m venv .venv
 
-# Kích hoạt (Windows)
+# Kích hoạt (Windows PowerShell — lần đầu cần chạy lệnh này)
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
 .venv\Scripts\activate
 
 # Kích hoạt (macOS/Linux)
@@ -100,19 +125,19 @@ pip install -r requirements.txt
 python -m app.seed_data
 ```
 
-Lệnh này sẽ tạo:
-- ✅ File `traceability.db` (SQLite)
-- ✅ **5 lô sản phẩm** với dữ liệu sensor đầy đủ
-- ✅ **705 sensor readings** + **42 trace events**
-- ✅ **5 QR code** PNG trong `app/static/qr/`
+Tạo ra:
+- ✅ `traceability.db` — SQLite database
+- ✅ **5 lô sản phẩm** với dữ liệu cảm biến mô phỏng thực tế
+- ✅ **705 sensor readings** + **42 trace events** — tất cả có SHA-256 hash
+- ✅ **5 QR code PNG**
 
 | Lô | Sản phẩm | Địa điểm | Số ngày |
 |---|---|---|---|
-| VEG-001 | Rau cải xanh | Đông Anh, Hà Nội | 15 ngày |
-| VEG-002 | Cà chua bi VietGAP | Đức Trọng, Lâm Đồng | 30 ngày |
-| VEG-003 | Dưa leo baby hữu cơ | Củ Chi, TP.HCM | 20 ngày |
-| VEG-004 | Cải bắp Đà Lạt sạch | Lạc Dương, Lâm Đồng | 51 ngày |
-| VEG-005 | Xà lách thủy canh NFT | Gia Lâm, Hà Nội | 25 ngày |
+| VEG-001 | Rau cải xanh | Đông Anh, Hà Nội | 15 |
+| VEG-002 | Cà chua bi VietGAP | Đức Trọng, Lâm Đồng | 30 |
+| VEG-003 | Dưa leo baby hữu cơ | Củ Chi, TP.HCM | 20 |
+| VEG-004 | Cải bắp Đà Lạt sạch | Lạc Dương, Lâm Đồng | 51 |
+| VEG-005 | Xà lách thủy canh NFT | Gia Lâm, Hà Nội | 25 |
 
 ### Bước 3 — Chạy server
 
@@ -124,110 +149,63 @@ Mở trình duyệt: **http://localhost:8000**
 
 ---
 
-## 📱 Cho Điện Thoại Quét QR
+## 📱 Để Điện Thoại Quét QR Được
 
 ### Cách 1 — Cùng mạng WiFi
 
-Tìm IP máy tính trên WiFi:
-
-```powershell
-# Windows
+```bash
+# Tìm IP WiFi (Windows)
 ipconfig
-# Tìm dòng "IPv4 Address" của WiFi adapter, ví dụ: 192.168.1.100
-```
+# → Tìm dòng IPv4, ví dụ: 192.168.1.100
 
-```bash
-# macOS/Linux
-hostname -I
-```
-
-Tái tạo QR với IP thực:
-
-```bash
+# Cập nhật QR
 python regen_qr.py http://192.168.1.100:8000
 ```
 
-Điện thoại và máy tính cùng WiFi → quét QR → truy xuất ngay.
-
-### Cách 2 — Ngrok (bất kỳ mạng nào)
-
-Dùng khi demo với giảng viên hoặc người dùng ở mạng khác.
+### Cách 2 — Ngrok (bất kỳ mạng nào, dùng khi demo)
 
 ```bash
 # Terminal 1: Chạy server
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 
-# Terminal 2: Mở tunnel
+# Terminal 2: Mở ngrok tunnel
 ngrok http 8000
-# → Nhận URL dạng: https://abc123.ngrok-free.dev
+# → Nhận URL: https://xxxx.ngrok-free.dev
 
-# Cập nhật QR với URL ngrok
-python regen_qr.py https://abc123.ngrok-free.dev
+# Terminal 3: Cập nhật QR
+python regen_qr.py https://xxxx.ngrok-free.dev
 ```
 
-> ⚠️ **Lưu ý**: URL ngrok thay đổi mỗi lần khởi động lại. Sau khi đổi URL, chạy lại `regen_qr.py`.
-
----
-
-## 🌐 Deploy Lên Render.com (Vĩnh Viễn, Miễn Phí)
-
-1. **Push code lên GitHub** (đã có sẵn `render.yaml`)
-
-2. **Vào [render.com](https://render.com)** → New Web Service → Connect GitHub repo
-
-3. **Render tự đọc `render.yaml`** và deploy
-
-4. **Sau khi deploy xong**, vào Environment Variables trong Render dashboard:
-   ```
-   APP_BASE_URL = https://ten-app-cua-ban.onrender.com
-   ```
-
-5. **Seed dữ liệu** bằng Render Shell:
-   ```bash
-   python -m app.seed_data
-   ```
-
-6. **Cập nhật QR** trên máy local:
-   ```bash
-   python regen_qr.py https://ten-app-cua-ban.onrender.com
-   ```
-   Hoặc dùng Render Shell:
-   ```bash
-   python regen_qr.py https://ten-app-cua-ban.onrender.com
-   ```
+> ⚠️ URL ngrok thay đổi mỗi lần khởi động lại. Chạy lại `regen_qr.py` sau khi đổi URL.
 
 ---
 
 ## 🔌 ESP32 Firmware
 
-### Phần cứng cần có
+### Sơ đồ kết nối
 
-| Linh kiện | Chân ESP32 |
+| Cảm biến | Chân ESP32 |
 |---|---|
-| DHT22 (Temp + Humidity) | GPIO 4 |
-| Soil Moisture Sensor (Analog) | GPIO 34 |
-| Light Sensor / LDR (Analog) | GPIO 35 |
+| DHT22 (Data) | GPIO 4 |
+| Soil Moisture (AO) | GPIO 34 |
+| Light Sensor (AO) | GPIO 35 |
 
-Xem chi tiết: [docs/wiring.md](docs/wiring.md)
+Chi tiết: [docs/wiring.md](docs/wiring.md)
 
 ### Cài đặt
 
-1. Cài [VS Code](https://code.visualstudio.com/) + extension [PlatformIO IDE](https://platformio.org/)
-2. Mở thư mục `iot-firmware/` trong VS Code
-3. Copy file credentials:
-   ```bash
-   cp iot-firmware/include/secrets.example.h iot-firmware/include/secrets.h
-   ```
-4. Chỉnh sửa `secrets.h`:
-   ```cpp
-   #define WIFI_SSID     "Ten_WiFi_Cua_Ban"
-   #define WIFI_PASSWORD "Mat_Khau_WiFi"
-   #define SERVER_URL    "http://192.168.1.100:8000/api/iot/sensor-data"
-   // hoặc dùng URL Render/ngrok
-   ```
-5. Chỉnh `include/config.h` nếu cần đổi `DEVICE_ID`, `BATCH_ID`, hoặc calibration cảm biến đất
-6. Click **Upload** trong PlatformIO để flash lên ESP32
-7. Mở **Serial Monitor** (115200 baud) để theo dõi
+```bash
+# 1. Mở thư mục iot-firmware/ bằng VS Code + PlatformIO
+# 2. Copy file credentials
+cp iot-firmware/include/secrets.example.h iot-firmware/include/secrets.h
+
+# 3. Sửa secrets.h
+#define WIFI_SSID     "Ten_WiFi"
+#define WIFI_PASSWORD "Mat_Khau"
+#define SERVER_URL    "http://192.168.1.100:8000/api/iot/sensor-data"
+
+# 4. Upload lên ESP32 qua PlatformIO
+```
 
 ---
 
@@ -241,36 +219,34 @@ Content-Type: application/json
 
 {
   "device_id": "ESP32_FARM_01",
-  "batch_id": "VEG-001",
-  "temperature": 27.5,
-  "air_humidity": 72.0,
+  "batch_id":  "VEG-001",
+  "temperature":   27.5,
+  "air_humidity":  72.0,
   "soil_moisture": 63.4,
-  "light": 820
+  "light":         820
 }
 ```
 
 Response:
 ```json
 {
-  "message": "Sensor data received successfully",
+  "message":    "Sensor data received successfully",
   "reading_id": 76,
-  "status": "NORMAL",
-  "hash": "a3f8c2...",
+  "status":     "NORMAL",
+  "hash":       "a3f8c2d1...",
   "created_at": "2026-05-15T14:30:00Z"
 }
 ```
 
-### Xem dữ liệu cảm biến (JSON)
+### Các endpoint khác
 
-```http
-GET /api/batches/{batch_id}/sensor-data
-```
-
-### Trang truy xuất (dành cho người tiêu dùng quét QR)
-
-```
-GET /trace/{batch_id}
-```
+| Method | Endpoint | Mô tả |
+|---|---|---|
+| `GET` | `/` | Dashboard quản lý |
+| `GET` | `/trace/{batch_id}` | Trang truy xuất công khai (người dùng quét QR) |
+| `GET` | `/api/batches/{batch_id}/sensor-data` | Raw sensor data JSON |
+| `POST` | `/batches` | Tạo lô mới |
+| `POST` | `/batches/{batch_id}/events` | Thêm sự kiện truy xuất |
 
 ### Test bằng curl
 
@@ -282,65 +258,61 @@ curl -X POST http://localhost:8000/api/iot/sensor-data \
 
 ---
 
-## 🔐 Cơ Chế Toàn Vẹn Dữ Liệu (Hash Integrity)
+## 🔐 Cơ Chế Toàn Vẹn Dữ Liệu
 
-Mỗi bản ghi cảm biến và sự kiện truy xuất đều có **SHA-256 hash**:
+Mỗi sensor reading và trace event được gắn một **SHA-256 hash** tại thời điểm tạo:
 
 ```
-SHA256(batch_id | device_id | temperature | air_humidity | soil_moisture | light | status | created_at)
+hash = SHA256(batch_id | device_id | temperature | air_humidity |
+              soil_moisture | light | status | created_at)
 ```
 
-Trang `/trace/{batch_id}` tự động kiểm tra và hiển thị:
-- ✅ **"Dữ liệu hợp lệ"** — nếu tất cả hash khớp
-- ⚠️ **"Cảnh báo: dữ liệu có thể đã bị chỉnh sửa"** — nếu có bất kỳ hash nào không khớp
+**Khi verify**: tính lại hash từ data hiện tại, so sánh với hash đã lưu:
+- ✅ Khớp → dữ liệu nguyên vẹn
+- ⚠️ Không khớp → dữ liệu đã bị chỉnh sửa (mà không cập nhật hash)
 
-**Demo tamper detection**: Dashboard có nút "Sửa giả lập" để thay đổi nhiệt độ mà không cập nhật hash → trang trace báo ngay lập tức.
+**Demo tamper detection**: Dashboard có nút *"Sửa giả lập"* — thay đổi `temperature + 10` mà không cập nhật hash → trang `/trace` hiển thị cảnh báo ngay.
 
 ---
 
-## 🛠️ Biến Môi Trường
-
-Tạo file `.env` trong thư mục `backend/` (copy từ `.env.example`):
-
-```env
-APP_BASE_URL=http://localhost:8000   # URL public để tạo link QR
-DATABASE_URL=sqlite:///./traceability.db
-```
-
----
-
-## 🔧 Scripts Tiện Ích
-
-### Tái tạo QR code khi đổi URL
+## 🛠️ Scripts Tiện Ích
 
 ```bash
-# Cú pháp
+# Tái tạo QR khi đổi URL
 python regen_qr.py <base_url>
+python regen_qr.py http://192.168.1.100:8000
+python regen_qr.py https://xxxx.ngrok-free.dev
 
-# Ví dụ
-python regen_qr.py http://192.168.1.100:8000      # local IP
-python regen_qr.py https://abc.ngrok-free.dev     # ngrok
-python regen_qr.py https://myapp.onrender.com     # Render
-```
-
-### Reset và seed lại dữ liệu
-
-```bash
-rm traceability.db         # Linux/macOS
-del traceability.db        # Windows
+# Reset và seed lại từ đầu
+del traceability.db          # Windows
+rm traceability.db           # macOS/Linux
 python -m app.seed_data
 ```
 
 ---
 
+## 🌐 Deploy Lên Render.com (Miễn Phí)
+
+1. Push code lên GitHub
+2. Vào [render.com](https://render.com) → New Web Service → Connect repo
+3. Render tự đọc `render.yaml`, deploy tự động
+4. Vào Environment Variables, thêm:
+   ```
+   APP_BASE_URL = https://ten-app.onrender.com
+   ```
+5. Trong Render Shell chạy: `python -m app.seed_data`
+6. Cập nhật QR: `python regen_qr.py https://ten-app.onrender.com`
+
+---
+
 ## 📊 Kịch Bản Demo
 
-1. Mở `http://localhost:8000` → thấy **5 lô sản phẩm** trên dashboard
-2. Click vào **VEG-002 (Cà chua bi)** → xem QR code, timeline, sensor data
-3. **Quét QR bằng điện thoại** → trang truy xuất mở ra với badge ✅ xác minh
-4. Trong dashboard, bấm **"Sửa giả lập"** trên một reading
-5. Quét lại QR → badge chuyển thành ⚠️ cảnh báo bị chỉnh sửa
-6. ESP32 cắm vào → dữ liệu thực từ cảm biến hiện lên realtime
+1. Mở dashboard → thấy 5 lô sản phẩm, mỗi lô có QR
+2. Click vào VEG-002 (Cà chua) → xem timeline 9 sự kiện, 150 readings
+3. Quét QR bằng điện thoại → trang truy xuất mở ngay, badge **✅ Dữ liệu hợp lệ**
+4. Bấm *"Sửa giả lập"* trên một reading
+5. Quét lại QR → badge chuyển **⚠️ Cảnh báo: dữ liệu có thể đã bị chỉnh sửa**
+6. ESP32 cắm vào → dữ liệu cảm biến thực hiện lên realtime
 
 ---
 
@@ -360,7 +332,6 @@ pillow==11.0.0
 
 ## 👤 Tác Giả
 
-- **Tên**: Lê Hoàng Dương  
-- **Trường**: Đại học Bách khoa Hà Nội (HUST)  
-- **Môn học**: Mật mã ứng dụng / IoT  
-- **Năm**: 2026
+- **Sinh viên**: Lê Hoàng Dương
+- **Trường**: Đại học Bách khoa Hà Nội (HUST)
+- **Năm học**: 2025–2026
