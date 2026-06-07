@@ -10,11 +10,18 @@
 <header class="topbar">
     <a class="brand" href="/">🌱 TraceVeg IoT</a>
     <nav>
+        {% if active_node_info %}
+        <span style="font-size: 13px; color: #166534; background: #dcfce7; padding: 5px 12px; border-radius: 20px; font-weight: 600; border: 1px solid #bbf7d0;">
+            🔗 Kết nối: {{ active_node_info.name }}
+        </span>
+        {% else %}
+        <span style="font-size: 13px; color: #991b1b; background: #fee2e2; padding: 5px 12px; border-radius: 20px; font-weight: 600; border: 1px solid #fecaca;">
+            ⚠️ Mạng ngoại tuyến (Offline)
+        </span>
+        {% endif %}
         <a href="/">Dashboard</a>
+        <a href="/blockchain">Blockchain Explorer</a>
         <a href="/batches/new">Tạo lô rau</a>
-        <form action="/demo/seed" method="post" class="inline-form">
-            <button class="link-button" type="submit">Tạo demo VEG-001</button>
-        </form>
     </nav>
 </header>
 <main class="container">

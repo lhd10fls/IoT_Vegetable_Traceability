@@ -3,6 +3,9 @@
 <section class="public-hero">
     <h1>Truy xuất nguồn gốc rau sạch</h1>
     <p class="tag">Mã lô: <strong>{{ batch.batch_id }}</strong></p>
+    <p style="font-size: 13px; color: #475569; margin-top: -6px;">
+        📂 Thông tin được truy xuất từ Node: <strong>{{ active_node_info.name }}</strong>
+    </p>
     {% if is_verified %}
         <div class="verify ok-bg">✓ Dữ liệu hợp lệ, chưa phát hiện thay đổi</div>
     {% else %}
@@ -37,6 +40,9 @@
         {% for e in events %}
         <li>
             <strong>{{ e.event_type }}</strong> - {{ e.description }}
+            {% if e.block_index is not none %}
+            <span style="font-size: 11px; background: #e0f2fe; color: #0369a1; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-family: monospace; border: 1px solid #bae6fd; margin-left: 6px;">Block #{{ e.block_index }}</span>
+            {% endif %}
             <br><span>{{ e.event_time }} · {{ e.actor }} · {{ e.location }}</span>
             <br>
             {% if verify_event(e) %}
@@ -58,12 +64,19 @@
     {% if readings %}
     <table>
         <thead>
-        <tr><th>Thời gian</th><th>Nhiệt độ</th><th>Độ ẩm KK</th><th>Độ ẩm đất</th><th>Trạng thái</th><th>Xác thực</th></tr>
+        <tr><th>Thời gian</th><th>Block bảo vệ</th><th>Nhiệt độ</th><th>Độ ẩm KK</th><th>Độ ẩm đất</th><th>Trạng thái</th><th>Xác thực</th></tr>
         </thead>
         <tbody>
         {% for r in readings %}
         <tr>
             <td>{{ r.created_at }}</td>
+            <td>
+                {% if r.block_index is not none %}
+                <span style="font-size: 11px; background: #e0f2fe; color: #0369a1; padding: 3px 8px; border-radius: 6px; font-weight: bold; font-family: monospace; border: 1px solid #bae6fd;">Block #{{ r.block_index }}</span>
+                {% else %}
+                <span class="muted">Chưa ghi</span>
+                {% endif %}
+            </td>
             <td>{{ r.temperature }}°C</td>
             <td>{{ r.air_humidity }}%</td>
             <td>{{ r.soil_moisture }}%</td>

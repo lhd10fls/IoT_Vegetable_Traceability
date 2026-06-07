@@ -3,7 +3,7 @@ import os
 import random
 from datetime import datetime, timedelta
 
-from app.database import Base, SessionLocal, engine
+from app.database import Base, SessionLocals, engines, init_db
 from app.models import Batch, SensorReading, TraceEvent
 from app.services.hash_service import make_event_hash, make_sensor_hash
 from app.services.qr_service import generate_qr
@@ -179,6 +179,27 @@ def seed_batch(db, cfg: dict, base_url: str) -> None:
         )
         db.add(batch)
         db.commit()
+        db.refresh(batch)
+
+        # Đào khối cho Batch
+        import json
+        from app.database import mine_block
+        block = mine_block(
+            db_session=db,
+            data_type="batch",
+            data_id=batch.batch_id,
+            data_content=json.dumps({
+                "batch_id": batch.batch_id,
+                "product_name": batch.product_name,
+                "farm_name": batch.farm_name,
+                "farm_location": batch.farm_location,
+                "planting_date": batch.planting_date,
+                "harvest_date": batch.harvest_date
+            }),
+            difficulty=2  # Độ khó thấp khi gieo dữ liệu để chạy nhanh
+        )
+        batch.block_index = block.index
+        db.commit()
         print(f"  ✅ Batch {batch_id} — QR: {qr_path}")
     else:
         print(f"  ⏭  Batch {batch_id} đã tồn tại, bỏ qua.")
@@ -209,8 +230,32 @@ def seed_batch(db, cfg: dict, base_url: str) -> None:
                 "event_time":  event_time_str,
                 "previous_hash": previous_hash,
             }
-            db.add(TraceEvent(**payload, event_hash=make_event_hash(payload)))
-            db.commit() # Commit sequentially so subsequent queries find it
+            event = TraceEvent(**payload, event_hash=make_event_hash(payload))
+            db.add(event)
+            db.commit()
+            db.refresh(event)
+
+            # Đào khối cho Event
+            import json
+            from app.database import mine_block
+            block = mine_block(
+                db_session=db,
+                data_type="event",
+                data_id=str(event.id),
+                data_content=json.dumps({
+                    "batch_id": event.batch_id,
+                    "event_type": event.event_type,
+                    "description": event.description,
+                    "actor": event.actor,
+                    "location": event.location,
+                    "event_time": event.event_time,
+                    "previous_hash": event.previous_hash,
+                    "event_hash": event.event_hash
+                }),
+                difficulty=2
+            )
+            event.block_index = block.index
+            db.commit()
         print(f"  ✅ {len(cfg['events'])} trace events cho {batch_id}")
 
 
@@ -266,32 +311,60 @@ def seed_batch(db, cfg: dict, base_url: str) -> None:
                     "status":       status,
                     "created_at":   created_at_str,
                 }
-                db.add(SensorReading(**payload, data_hash=make_sensor_hash(payload)))
+                reading = SensorReading(**payload, data_hash=make_sensor_hash(payload))
+                db.add(reading)
+                db.commit()
+                db.refresh(reading)
+
+                # Đào khối cho SensorReading
+                import json
+                from app.database import mine_block
+                block = mine_block(
+                    db_session=db,
+                    data_type="sensor",
+                    data_id=str(reading.id),
+                    data_content=json.dumps({
+                        "batch_id": reading.batch_id,
+                        "device_id": reading.device_id,
+                        "temperature": reading.temperature,
+                        "air_humidity": reading.air_humidity,
+                        "soil_moisture": reading.soil_moisture,
+                        "light": reading.light,
+                        "status": reading.status,
+                        "created_at": reading.created_at,
+                        "data_hash": reading.data_hash
+                    }),
+                    difficulty=2
+                )
+                reading.block_index = block.index
+                db.commit()
                 readings_added += 1
 
-        db.commit()
         print(f"  ✅ {readings_added} sensor readings cho {batch_id}")
 
 
 # ─── ENTRY POINT ───────────────────────────────────────────────────────────────
 def seed_all():
     os.makedirs("app/static/qr", exist_ok=True)
-    Base.metadata.create_all(bind=engine)
+    init_db()
 
     base_url = get_base_url()
     print(f"\n{'='*55}")
     print(f"  SEEDING {len(BATCHES)} lô sản phẩm | base_url={base_url}")
     print(f"{'='*55}\n")
 
-    db = SessionLocal()
-    try:
-        for cfg in BATCHES:
-            print(f"[{cfg['batch_id']}] {cfg['product_name']}")
-            seed_batch(db, cfg, base_url)
-            print()
-        print("✅ Seed data hoàn tất!")
-    finally:
-        db.close()
+    # Seed all nodes
+    for node_name, session_class in SessionLocals.items():
+        print(f"--- Gieo dữ liệu cho Node: {node_name} ---")
+        db = session_class()
+        try:
+            for cfg in BATCHES:
+                print(f"[{cfg['batch_id']}] {cfg['product_name']}")
+                seed_batch(db, cfg, base_url)
+                print()
+            print(f"✅ Gieo dữ liệu hoàn tất cho {node_name}!")
+        finally:
+            db.close()
 
 
 if __name__ == "__main__":

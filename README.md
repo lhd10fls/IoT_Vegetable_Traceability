@@ -1,8 +1,8 @@
-# 🌿 Hệ Thống Truy Xuất Nguồn Gốc Rau Sạch — IoT + Blockchain
+# 🌿 Hệ Thống Truy Xuất Nguồn Gốc Rau Sạch — IoT + Custom Proof-of-Work Blockchain
 
 > **Môn học**: Mật Mã và Độ Phức Tạp Thuật Toán — Đại học Bách Khoa Hà Nội (HUST)
 >
-> **Mô tả**: Hệ thống thu thập dữ liệu môi trường tự động từ cảm biến IoT (ESP32), bảo toàn tính toàn vẹn dữ liệu bằng chuỗi liên kết băm SHA-256 (Hash Chain) theo triết lý Blockchain, và cho phép người tiêu dùng tra cứu nguồn gốc sản phẩm bằng cách quét mã QR.
+> **Mô tả**: Hệ thống thu thập dữ liệu môi trường tự động từ cảm biến IoT (ESP32), bảo toàn dữ liệu bằng **mạng lưới Blockchain phân tán tự xây dựng (3 Nodes)** chạy thuật toán đồng thuận **Proof of Work (PoW)** dùng mã băm SHA-256, và tích hợp giao diện **Block Explorer** khám phá chuỗi khối cùng trang truy xuất QR cho người tiêu dùng.
 
 ---
 
@@ -41,17 +41,16 @@
 
 ---
 
-## 🔐 Cơ Chế Bảo Toàn Dữ Liệu (Hash Chain)
+## 🔐 Kiến Trúc Blockchain & Thuật Toán Proof of Work (PoW)
 
-Mỗi sự kiện truy xuất (TraceEvent) được liên kết mật mã học với sự kiện trước đó:
-
-```
-GENESIS   →  GIEO_TRONG  →  THU_HOACH  →  VAN_CHUYEN  →  ...
-Hash: 000000  →  a3f2b91c  →  7e84c2d1  →  5b91f3a2   →  ...
-```
-
-- **Event Hash** = SHA-256(batch_id | event_type | ... | **previous_hash**)
-- Nếu ai sửa dữ liệu của 1 sự kiện → hash bị vỡ → toàn bộ chuỗi phía sau mất hiệu lực
+Hệ thống hoạt động như một Blockchain thực tế với các thành phần:
+- **Cấu trúc Khối (Block)**: Mỗi bản ghi dữ liệu (Lô hàng, Sự kiện, Chỉ số cảm biến) đều được đóng gói thành một giao dịch và đào vào một **Block** riêng biệt.
+- **Proof of Work (PoW)**: Khi một khối mới được ghi nhận, server sẽ chạy vòng lặp tìm giá trị **Nonce** sao cho mã băm SHA-256 của khối bắt đầu bằng các chữ số không:
+  `SHA-256(index | timestamp | previous_hash | difficulty | data_type | data_id | data_content | nonce)`
+  * Độ khó mặc định được cấu hình là **4** (mã băm bắt đầu bằng `0000`), thời gian đào khối trên CPU dao động từ **50ms - 200ms**, tạo ra trải nghiệm khai thác thực tế khi demo.
+- **Lưu trữ Phân tán (Replicated Nodes)**: 3 Database hoạt động song song (`node_a.db`, `node_b.db`, `node_c.db`). Khi ghi dữ liệu, khối sẽ được sao chép đến tất cả các node đang hoạt động.
+- **Failover (Phòng vệ)**: Nếu một node offline, client tự động chuyển sang đọc/ghi dữ liệu từ node trực tuyến khác.
+- **Đồng bộ hóa (Consensus Sync)**: Khi một node online trở lại, quản trị viên có thể nhấn nút "Đồng bộ" để kéo toàn bộ các khối bị thiếu và kiểm tra tính toàn vẹn của chuỗi băm PoW.
 
 ---
 
@@ -71,8 +70,12 @@ vegetable-traceability/
 │   │   │   ├── qr_service.py      # Sinh mã QR PNG
 │   │   │   └── sensor_service.py  # Phân loại trạng thái cảm biến
 │   │   ├── templates/          # Jinja2 HTML Templates
+│   │   │   ├── base.html       # Layout chung (Hiển thị kết nối Node)
+│   │   │   ├── dashboard.html  # Điều phối node mạng và danh sách lô hàng
+│   │   │   ├── batch_detail.html # Chi tiết và Form đào sự kiện
+│   │   │   ├── blockchain.html # [NEW] Trình khám phá Chuỗi khối (Explorer)
+│   │   │   └── trace.html      # Trang QR công khai cho khách hàng
 │   │   └── static/             # CSS + QR Images (sinh lúc runtime)
-│   ├── regen_qr.py             # Cập nhật lại QR khi đổi URL
 │   ├── requirements.txt        # Thư viện Python
 │   ├── render.yaml             # Deploy config cho Render.com
 │   └── .env.example
@@ -124,19 +127,17 @@ pip install -r requirements.txt
 
 ---
 
-### BƯỚC 2 — Khởi Tạo Cơ Sở Dữ Liệu & Dữ Liệu Mẫu
+### BƯỚC 2 — Khởi Tạo Cơ Sở Dữ Liệu & Dữ Liệu Mẫu (Chạy Đào Blockchain)
 
 ```bash
-# Chạy 1 lần duy nhất để tạo traceability.db + 5 lô mẫu + QR codes
+# Chạy 1 lần duy nhất để tạo cơ sở dữ liệu cho cả 3 node và tiến hành đào khối mẫu
 python -m app.seed_data
 ```
 
 Kết quả tạo ra:
-- ✅ `traceability.db` — SQLite database
-- ✅ **5 lô sản phẩm** với dữ liệu cảm biến mô phỏng thực tế (sóng sine theo chu kỳ ngày/đêm)
-- ✅ **705 sensor readings** đều có SHA-256 hash
-- ✅ **42 trace events** được liên kết thành chuỗi Hash Chain
-- ✅ **5 QR code PNG** trong `app/static/qr/`
+- ✅ `node_a.db`, `node_b.db`, `node_c.db` — 3 database SQLite độc lập của 3 node.
+- ✅ **Hơn 700 Khối (Blocks)** được đào thành công với độ khó PoW (Difficulty = 2) tương ứng cho từng lô hàng, sự kiện và chỉ số cảm biến mẫu.
+- ✅ **5 QR code PNG** trong `app/static/qr/` trỏ trực tiếp đến trang truy xuất nguồn gốc.
 
 ---
 
@@ -261,41 +262,44 @@ curl -X POST http://localhost:8000/api/iot/sensor-data \
 
 | Method | Endpoint | Mô tả |
 |---|---|---|
-| `GET` | `/` | Dashboard quản lý |
+| `GET` | `/` | Dashboard điều khiển mạng lưới và lô hàng |
+| `GET` | `/blockchain` | Trình khám phá Chuỗi khối (Block Explorer) |
 | `GET` | `/batches/new` | Form tạo lô sản phẩm mới |
-| `POST` | `/batches` | Tạo lô mới + sinh QR |
-| `GET` | `/batches/{id}` | Chi tiết lô: cảm biến + Hash Chain |
-| `POST` | `/batches/{id}/events` | Thêm sự kiện truy xuất |
-| `GET` | `/trace/{id}` | Trang công khai người dùng quét QR |
-| `POST` | `/api/iot/sensor-data` | ESP32 gửi dữ liệu cảm biến |
-| `GET` | `/api/batches/{id}/sensor-data` | Raw sensor data JSON |
-| `POST` | `/demo/tamper-reading/{id}` | **Demo**: Giả mạo dữ liệu để test phát hiện |
+| `POST` | `/batches` | Tạo lô mới + đào Genesis Block cho lô hàng |
+| `GET` | `/batches/{id}` | Chi tiết lô hàng (hiển thị số khối bảo vệ) |
+| `POST` | `/batches/{id}/events` | Thêm sự kiện + đào Block sự kiện |
+| `GET` | `/trace/{id}` | Trang QR truy xuất công khai dành cho khách hàng |
+| `POST` | `/api/iot/sensor-data` | ESP32 gửi dữ liệu cảm biến + đào Block cảm biến |
+| `GET` | `/api/blockchain/blocks` | Raw JSON blockchain blocks |
+| `POST` | `/demo/tamper-reading/{id}` | **Demo**: Giả mạo dữ liệu để kiểm thử phát hiện lỗi hash |
+| `POST` | `/demo/seed` | **Demo**: Bấm nút nạp lại dữ liệu mẫu từ giao diện web |
 
 ---
 
 ## 🔐 Cơ Chế Xác Minh Tính Toàn Vẹn
 
-### Sensor Reading Hash
+### Cấu Trúc Khối (Block Structure)
+Mỗi bản ghi được lưu trữ an toàn trong khối có cấu trúc:
+```json
+{
+  "index": 12,
+  "timestamp": "2026-06-07T15:20:00Z",
+  "previous_hash": "0000abc789...",
+  "nonce": 48210,
+  "hash": "0000def123...",
+  "difficulty": 4,
+  "data_type": "event",
+  "data_id": "5",
+  "data_content": "{...}"
+}
 ```
-hash = SHA256(batch_id | device_id | temperature | air_humidity |
-              soil_moisture | light | status | created_at)
-```
-
-### Trace Event Hash Chain
-```
-event_hash = SHA256(batch_id | event_type | description |
-                    actor | location | event_time | previous_hash)
-```
-
-- Sự kiện đầu tiên (Genesis): `previous_hash = "000...000"` (64 ký tự 0)
-- Mỗi sự kiện tiếp theo: `previous_hash = event_hash của sự kiện trước đó`
-- **Kết quả**: Sửa 1 sự kiện → hash vỡ → toàn chuỗi phía sau mất hiệu lực
+* **Lưu ý**: Chỉ khi băm của Block bắt đầu bằng số lượng số `0` bằng đúng `difficulty` thì khối mới được chấp nhận ghi sổ cái.
 
 ### Demo Phát Hiện Giả Mạo (Tamper Detection)
-1. Mở Dashboard → vào chi tiết lô VEG-001
-2. Nhấn nút **"Sửa giả lập"** trên một bản ghi cảm biến bất kỳ
-3. Hệ thống tăng nhiệt độ +10°C mà **không** cập nhật hash
-4. Trang `/trace/VEG-001` ngay lập tức hiển thị banner đỏ: ⚠️ **Dữ liệu có thể đã bị chỉnh sửa**
+1. Mở Dashboard → truy cập Lô hàng `VEG-001`.
+2. Bấm nút **"Sửa giả lập"** ở bảng cảm biến.
+3. Hệ thống sửa đổi trực tiếp nhiệt độ trong database mà **không** đào lại khối.
+4. Mở trang QR `/trace/VEG-001` (hoặc tải lại trang chi tiết), hệ thống tính toán lại hash và so sánh thấy không khớp với Hash của khối tương ứng &rarr; hiển thị cảnh báo đỏ **Cảnh báo: dữ liệu có thể đã bị chỉnh sửa**.
 
 ---
 
@@ -304,15 +308,13 @@ event_hash = SHA256(batch_id | event_type | description |
 ```bash
 # Tái tạo QR khi đổi URL server
 python regen_qr.py <base_url>
-python regen_qr.py http://192.168.1.10:8000
 python regen_qr.py https://rausach-hust.loca.lt
-python regen_qr.py https://ten-app.onrender.com
 
-# Reset và seed lại từ đầu (xóa database cũ)
-# Windows:
-del traceability.db
-# macOS/Linux:
-rm traceability.db
+# Reset và seed lại từ đầu (xóa 3 database cũ của 3 node)
+# Windows (PowerShell):
+Remove-Item node_a.db, node_b.db, node_c.db -ErrorAction SilentlyContinue
+# macOS / Linux:
+rm node_a.db node_b.db node_c.db
 
 python -m app.seed_data
 ```

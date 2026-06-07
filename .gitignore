@@ -3,7 +3,7 @@ __pycache__/
 *.pyc
 *.pyo
 .venv/
-traceability.db
+*.db
 .env
 
 # QR images are generated at runtime — do not commit
@@ -27,3 +27,4 @@ Thumbs.db
 
 # Reports & Personal docs
 *.docx
+node_status.json

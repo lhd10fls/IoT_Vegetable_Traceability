@@ -1,33 +1,136 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="hero">
-    <h1>Hệ thống truy xuất nguồn gốc rau sạch</h1>
-    <p>Quản lý lô rau, nhận dữ liệu IoT từ ESP32, tạo QR code và kiểm tra tính toàn vẹn dữ liệu bằng SHA-256 hash.</p>
-    <a class="primary-btn" href="/batches/new">+ Tạo lô rau mới</a>
+<section class="hero" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+    <div>
+        <h1 style="margin-bottom: 8px;">Hệ thống truy xuất nguồn gốc rau sạch</h1>
+        <p style="margin: 0; color: #475569;">Quản lý lô rau, nhận dữ liệu IoT từ ESP32, tạo QR code và kiểm tra tính toàn vẹn dữ liệu bằng SHA-256 hash.</p>
+    </div>
+    <div style="display: flex; gap: 10px;">
+        <a class="primary-btn" href="/batches/new">+ Tạo lô rau mới</a>
+        <form action="/demo/seed" method="post" style="display: inline;">
+            <button type="submit" class="secondary-btn" style="border: 1px solid #1b7f3a;" onclick="return confirm('Bạn có chắc chắn muốn cài đặt lại và gieo dữ liệu mẫu cho cả 3 node?')">🌱 Reset & Gieo dữ liệu mẫu</button>
+        </form>
+    </div>
+</section>
+
+<!-- Panel quản lý mạng lưới lưu trữ phân tán -->
+<section class="card">
+    <h2 style="margin-top: 0; display: flex; align-items: center; gap: 8px;">
+        🌐 Trạng thái Mạng lưới Lưu trữ Phân tán (Distributed Nodes)
+    </h2>
+    <p class="muted" style="margin-bottom: 20px;">
+        Hệ thống mô phỏng 3 nút (node) lưu trữ dữ liệu độc lập. Khi bạn thêm thông tin (lô hàng, sự kiện hoặc chỉ số cảm biến), dữ liệu sẽ tự động <strong>đồng bộ đồng thời (replicated)</strong> sang các Node đang <strong>Online</strong>. Thử nghiệm tắt Node để kiểm chứng tính năng <strong>tự động chuyển phòng vệ (Failover)</strong>.
+    </p>
+    
+    <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse; min-width: 600px;">
+            <thead>
+                <tr style="border-bottom: 2px solid #e2e8f0; text-align: left;">
+                    <th style="padding: 12px 10px;">Tên Node</th>
+                    <th style="padding: 12px 10px;">Cơ sở dữ liệu</th>
+                    <th style="padding: 12px 10px;">Trạng thái</th>
+                    <th style="padding: 12px 10px; text-align: center;">Số Lô hàng</th>
+                    <th style="padding: 12px 10px; text-align: center;">Số Sự kiện</th>
+                    <th style="padding: 12px 10px; text-align: center;">Số Bản ghi IoT</th>
+                    <th style="padding: 12px 10px;">Đồng bộ dữ liệu</th>
+                    <th style="padding: 12px 10px; text-align: center;">Hành động</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for node in network_status.nodes %}
+                <tr style="border-bottom: 1px solid #edf2f7; background: {% if node.is_active_reader %}#f0fdf4{% else %}transparent{% endif %};">
+                    <td style="padding: 12px 10px; font-weight: 600; color: #1e293b;">
+                        {{ node.name }}
+                        {% if node.is_active_reader %}
+                        <span style="font-size: 11px; background: #dcfce7; color: #15803d; padding: 2px 6px; border-radius: 4px; font-weight: normal; margin-left: 6px; border: 1px solid #bbf7d0;">Đang đọc/ghi</span>
+                        {% endif %}
+                    </td>
+                    <td style="padding: 12px 10px;"><code style="background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 13px;">{{ node.node_id }}.db</code></td>
+                    <td style="padding: 12px 10px;">
+                        {% if node.online %}
+                        <span style="display: inline-block; background: #dcfce7; color: #15803d; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; border: 1px solid #bbf7d0;">Online</span>
+                        {% else %}
+                        <span style="display: inline-block; background: #fee2e2; color: #b91c1c; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; border: 1px solid #fecaca;">Offline</span>
+                        {% endif %}
+                    </td>
+                    <td style="padding: 12px 10px; text-align: center; font-weight: 600; color: #475569;">{{ node.batches_count }}</td>
+                    <td style="padding: 12px 10px; text-align: center; font-weight: 600; color: #475569;">{{ node.events_count }}</td>
+                    <td style="padding: 12px 10px; text-align: center; font-weight: 600; color: #475569;">{{ node.readings_count }}</td>
+                    <td style="padding: 12px 10px;">
+                        {% if not node.online %}
+                        <span style="color: #94a3b8; font-style: italic;">Ngoại tuyến</span>
+                        {% elif node.sync_status == "Đã đồng bộ" %}
+                        <span style="color: #15803d; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">
+                            <span style="font-size: 14px;">✓</span> {{ node.sync_status }}
+                        </span>
+                        {% else %}
+                        <span style="color: #d97706; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">
+                            <span style="font-size: 14px;">⚠️</span> {{ node.sync_status }}
+                        </span>
+                        {% endif %}
+                    </td>
+                    <td style="padding: 12px 10px; text-align: center;">
+                        <div style="display: flex; gap: 6px; justify-content: center;">
+                            <form action="/api/network/toggle-node" method="post" style="margin: 0;">
+                                <input type="hidden" name="node_id" value="{{ node.node_id }}">
+                                {% if node.online %}
+                                <button type="submit" class="danger-btn" style="padding: 5px 10px; font-size: 12px; min-width: 60px;">Tắt</button>
+                                {% else %}
+                                <button type="submit" class="secondary-btn" style="padding: 5px 10px; font-size: 12px; background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; min-width: 60px;">Bật</button>
+                                {% endif %}
+                            </form>
+                            {% if node.can_sync %}
+                            <form action="/api/network/sync-node" method="post" style="margin: 0;">
+                                <input type="hidden" name="node_id" value="{{ node.node_id }}">
+                                <button type="submit" class="primary-btn" style="padding: 5px 10px; font-size: 12px; background: #d97706; min-width: 80px;">Đồng bộ</button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </section>
 
 <section class="card">
     <h2>Danh sách lô rau</h2>
-    {% if batches %}
-    <div class="grid">
-        {% for batch in batches %}
-        <article class="batch-card">
-            <h3>{{ batch.product_name }}</h3>
-            <p><strong>Mã lô:</strong> {{ batch.batch_id }}</p>
-            <p><strong>Nông trại:</strong> {{ batch.farm_name }}</p>
-            <p><strong>Vị trí:</strong> {{ batch.farm_location }}</p>
-            {% if batch.qr_path %}
-            <img class="qr-small" src="{{ batch.qr_path }}" alt="QR {{ batch.batch_id }}">
-            {% endif %}
-            <div class="actions">
-                <a class="secondary-btn" href="/batches/{{ batch.batch_id }}">Quản lý</a>
-                <a class="secondary-btn" href="/trace/{{ batch.batch_id }}" target="_blank">Trang QR</a>
-            </div>
-        </article>
-        {% endfor %}
+    {% if all_offline %}
+    <div style="background: #fee2e2; border: 1px solid #fca5a5; color: #991b1b; padding: 24px; border-radius: 12px; font-weight: 600; text-align: center; margin: 12px 0;">
+        <p style="font-size: 18px; margin: 0 0 8px 0;">⚠️ Lỗi: Không thể kết nối với mạng lưới!</p>
+        <p style="font-size: 14px; margin: 0; font-weight: normal;">Tất cả các node lưu trữ phân tán đều ngoại tuyến (offline). Vui lòng nhấn "Bật" một trong các node ở trên để hệ thống hoạt động trở lại.</p>
     </div>
     {% else %}
-    <p>Chưa có lô rau nào. Bấm “Tạo demo VEG-001” hoặc tạo lô mới.</p>
+        {% if batches %}
+        <div class="grid">
+            {% for batch in batches %}
+            <article class="batch-card" style="display: flex; flex-direction: column; justify-content: space-between;">
+                <div>
+                    <h3 style="margin-top: 0; color: #1e293b;">{{ batch.product_name }}</h3>
+                    <p style="margin: 6px 0;"><strong>Mã lô:</strong> <code style="background: #f1f5f9; padding: 2px 6px; border-radius: 4px;">{{ batch.batch_id }}</code></p>
+                    <p style="margin: 6px 0;"><strong>Nông trại:</strong> {{ batch.farm_name }}</p>
+                    <p style="margin: 6px 0; font-size: 13px; color: #64748b;"><strong>Vị trí:</strong> {{ batch.farm_location }}</p>
+                    {% if batch.qr_path %}
+                    <div style="text-align: center; margin: 16px 0 10px 0;">
+                        <img class="qr-small" src="{{ batch.qr_path }}" alt="QR {{ batch.batch_id }}" style="border: 1px solid #e2e8f0; padding: 4px; background: white;">
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="actions" style="margin-top: 12px; border-top: 1px solid #edf2f7; padding-top: 12px;">
+                    <a class="secondary-btn" href="/batches/{{ batch.batch_id }}" style="flex: 1; text-align: center;">Quản lý</a>
+                    <a class="secondary-btn" href="/trace/{{ batch.batch_id }}" target="_blank" style="flex: 1; text-align: center; background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0;">Trang QR</a>
+                </div>
+            </article>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div style="text-align: center; padding: 32px; color: #64748b;">
+            <p style="font-size: 16px; margin-bottom: 16px;">Chưa có dữ liệu lô hàng nào.</p>
+            <p style="font-size: 14px;">Bấm nút <strong>"Reset & Gieo dữ liệu mẫu"</strong> ở trên để nạp dữ liệu mẫu tự động cho cả 3 node.</p>
+        </div>
+        {% endif %}
     {% endif %}
 </section>
 {% endblock %}
+

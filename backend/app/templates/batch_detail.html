@@ -4,6 +4,9 @@
     <div class="two-col">
         <div>
             <h1>{{ batch.product_name }} - {{ batch.batch_id }}</h1>
+            <p style="margin-top: -8px; color: #4b5563; font-size: 14px; margin-bottom: 16px;">
+                📂 Dữ liệu được truy vấn từ: <strong>{{ active_node_info.name }}</strong> (<code>{{ active_node_info.node_id }}.db</code>)
+            </p>
             <p><strong>Nông trại:</strong> {{ batch.farm_name }}</p>
             <p><strong>Địa điểm:</strong> {{ batch.farm_location }}</p>
             <p><strong>Gieo trồng:</strong> {{ batch.planting_date }}</p>
@@ -36,12 +39,19 @@
     {% if events %}
     <table>
         <thead>
-        <tr><th>Thời gian</th><th>Loại</th><th>Mô tả</th><th>Người thực hiện</th><th>Vị trí</th><th>Prev Hash</th><th>Event Hash</th><th>Xác thực</th></tr>
+        <tr><th>Thời gian</th><th>Block bảo vệ</th><th>Loại</th><th>Mô tả</th><th>Người thực hiện</th><th>Vị trí</th><th>Prev Hash</th><th>Event Hash</th><th>Xác thực</th></tr>
         </thead>
         <tbody>
         {% for e in events %}
         <tr>
             <td>{{ e.event_time }}</td>
+            <td>
+                {% if e.block_index is not none %}
+                <a href="/blockchain" style="background: #e0f2fe; color: #0369a1; padding: 3px 8px; border-radius: 6px; font-weight: bold; font-family: monospace; font-size: 13px; border: 1px solid #bae6fd;">#{{ e.block_index }}</a>
+                {% else %}
+                <span class="muted">Chưa ghi</span>
+                {% endif %}
+            </td>
             <td>{{ e.event_type }}</td>
             <td>{{ e.description }}</td>
             <td>{{ e.actor }}</td>
@@ -68,12 +78,19 @@
     {% if readings %}
     <table>
         <thead>
-        <tr><th>ID</th><th>Thời gian</th><th>Thiết bị</th><th>Nhiệt độ</th><th>Độ ẩm KK</th><th>Độ ẩm đất</th><th>Ánh sáng</th><th>Trạng thái</th><th>Hash</th><th>Xác thực</th><th>Demo</th></tr>
+        <tr><th>ID</th><th>Block bảo vệ</th><th>Thời gian</th><th>Thiết bị</th><th>Nhiệt độ</th><th>Độ ẩm KK</th><th>Độ ẩm đất</th><th>Ánh sáng</th><th>Trạng thái</th><th>Hash</th><th>Xác thực</th><th>Demo</th></tr>
         </thead>
         <tbody>
         {% for r in readings %}
         <tr>
             <td>{{ r.id }}</td>
+            <td>
+                {% if r.block_index is not none %}
+                <a href="/blockchain" style="background: #e0f2fe; color: #0369a1; padding: 3px 8px; border-radius: 6px; font-weight: bold; font-family: monospace; font-size: 13px; border: 1px solid #bae6fd;">#{{ r.block_index }}</a>
+                {% else %}
+                <span class="muted">Chưa ghi</span>
+                {% endif %}
+            </td>
             <td>{{ r.created_at }}</td>
             <td>{{ r.device_id }}</td>
             <td>{{ r.temperature }}°C</td>
