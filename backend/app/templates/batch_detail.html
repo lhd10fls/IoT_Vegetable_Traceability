@@ -36,7 +36,7 @@
     {% if events %}
     <table>
         <thead>
-        <tr><th>Thời gian</th><th>Loại</th><th>Mô tả</th><th>Người thực hiện</th><th>Vị trí</th><th>Hash</th><th>Xác thực</th></tr>
+        <tr><th>Thời gian</th><th>Loại</th><th>Mô tả</th><th>Người thực hiện</th><th>Vị trí</th><th>Prev Hash</th><th>Event Hash</th><th>Xác thực</th></tr>
         </thead>
         <tbody>
         {% for e in events %}
@@ -46,7 +46,8 @@
             <td>{{ e.description }}</td>
             <td>{{ e.actor }}</td>
             <td>{{ e.location }}</td>
-            <td><code>{{ e.event_hash[:12] }}...</code></td>
+            <td><code title="{{ e.previous_hash }}">{{ e.previous_hash[:12] }}...</code></td>
+            <td><code title="{{ e.event_hash }}">{{ e.event_hash[:12] }}...</code></td>
             <td>{% if verify_event(e) %}<span class="ok">Hợp lệ</span>{% else %}<span class="bad">Bị sửa</span>{% endif %}</td>
         </tr>
         {% endfor %}
@@ -56,6 +57,7 @@
     <p>Chưa có sự kiện.</p>
     {% endif %}
 </section>
+
 
 <section class="card">
     <h2>Dữ liệu cảm biến IoT</h2>

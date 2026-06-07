@@ -190,6 +190,16 @@ def seed_batch(db, cfg: dict, base_url: str) -> None:
                 days=item["offset_days"], hours=item["offset_hours"]
             )
             event_time_str = to_iso(event_time)
+            
+            # Retrieve the last event for this batch to get previous_hash
+            last_event = (
+                db.query(TraceEvent)
+                .filter(TraceEvent.batch_id == batch_id)
+                .order_by(TraceEvent.id.desc())
+                .first()
+            )
+            previous_hash = last_event.event_hash if last_event else "0" * 64
+
             payload = {
                 "batch_id":    batch_id,
                 "event_type":  item["event_type"],
@@ -197,10 +207,12 @@ def seed_batch(db, cfg: dict, base_url: str) -> None:
                 "actor":       item["actor"],
                 "location":    item["location"],
                 "event_time":  event_time_str,
+                "previous_hash": previous_hash,
             }
             db.add(TraceEvent(**payload, event_hash=make_event_hash(payload)))
-        db.commit()
+            db.commit() # Commit sequentially so subsequent queries find it
         print(f"  ✅ {len(cfg['events'])} trace events cho {batch_id}")
+
 
     # ── 3. Sensor Readings ────────────────────────────────────────────────────
     if db.query(SensorReading).filter(SensorReading.batch_id == batch_id).count() == 0:

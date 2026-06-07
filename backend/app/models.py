@@ -1,6 +1,7 @@
+# pyrefly: ignore [missing-import]
 from sqlalchemy import Column, Float, Integer, String, Text
+# pyrefly: ignore [missing-import]
 from app.database import Base
-
 
 class Batch(Base):
     __tablename__ = "batches"
@@ -41,4 +42,6 @@ class TraceEvent(Base):
     actor = Column(String(255), nullable=False)
     location = Column(String(255), nullable=False)
     event_time = Column(String(64), nullable=False)
+    previous_hash = Column(String(128), nullable=False)
     event_hash = Column(String(128), nullable=False)
+

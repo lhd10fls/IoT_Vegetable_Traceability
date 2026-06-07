@@ -46,6 +46,7 @@ def make_event_hash(payload: Dict[str, Any]) -> str:
             str(payload["actor"]),
             str(payload["location"]),
             str(payload["event_time"]),
+            str(payload["previous_hash"]),
         ]
     )
     return sha256_text(raw)
@@ -59,5 +60,7 @@ def verify_trace_event(event) -> bool:
         "actor": event.actor,
         "location": event.location,
         "event_time": event.event_time,
+        "previous_hash": event.previous_hash,
     }
     return make_event_hash(payload) == event.event_hash
+

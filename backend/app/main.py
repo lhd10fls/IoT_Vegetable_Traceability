@@ -2,10 +2,15 @@ import os
 from datetime import datetime
 from typing import List
 
+# pyrefly: ignore [missing-import]
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
+# pyrefly: ignore [missing-import]
 from fastapi.responses import HTMLResponse, RedirectResponse
+# pyrefly: ignore [missing-import]
 from fastapi.staticfiles import StaticFiles
+# pyrefly: ignore [missing-import]
 from fastapi.templating import Jinja2Templates
+# pyrefly: ignore [missing-import]
 from sqlalchemy.orm import Session
 
 from app.database import get_db, init_db
@@ -46,6 +51,16 @@ def add_trace_event(
     event_time: str | None = None,
 ) -> TraceEvent:
     event_time = event_time or now_iso()
+    
+    # Get previous event to link them in a hash chain
+    last_event = (
+        db.query(TraceEvent)
+        .filter(TraceEvent.batch_id == batch_id)
+        .order_by(TraceEvent.id.desc())
+        .first()
+    )
+    previous_hash = last_event.event_hash if last_event else "0" * 64
+
     payload = {
         "batch_id": batch_id,
         "event_type": event_type,
@@ -53,12 +68,14 @@ def add_trace_event(
         "actor": actor,
         "location": location,
         "event_time": event_time,
+        "previous_hash": previous_hash,
     }
     event = TraceEvent(**payload, event_hash=make_event_hash(payload))
     db.add(event)
     db.commit()
     db.refresh(event)
     return event
+
 
 
 @app.on_event("startup")
@@ -300,26 +317,3 @@ def tamper_reading(reading_id: int, db: Session = Depends(get_db)):
     db.commit()
     return RedirectResponse(url=f"/batches/{reading.batch_id}", status_code=303)
 
-
-@app.post("/demo/seed")
-def seed_demo(request: Request, db: Session = Depends(get_db)):
-    batch_id = "VEG-001"
-    batch = db.query(Batch).filter(Batch.batch_id == batch_id).first()
-    if not batch:
-        qr_path = generate_qr(batch_id=batch_id, base_url=get_base_url(request))
-        batch = Batch(
-            batch_id=batch_id,
-            product_name="Rau cải xanh",
-            farm_name="HUST Smart Farm",
-            farm_location="Hà Nội",
-            planting_date="2026-05-01",
-            harvest_date="2026-05-15",
-            qr_path=qr_path,
-            created_at=now_iso(),
-        )
-        db.add(batch)
-        db.commit()
-        add_trace_event(db, batch_id, "GIEO_TRONG", "Gieo trồng rau cải xanh", "Nông trại", "Hà Nội")
-        add_trace_event(db, batch_id, "THU_HOACH", "Thu hoạch và phân loại rau", "Nông trại", "Hà Nội")
-        add_trace_event(db, batch_id, "DONG_GOI", "Đóng gói lô rau", "Nhân viên đóng gói", "Hà Nội")
-    return RedirectResponse(url=f"/batches/{batch_id}", status_code=303)

@@ -38,7 +38,12 @@
         <li>
             <strong>{{ e.event_type }}</strong> - {{ e.description }}
             <br><span>{{ e.event_time }} · {{ e.actor }} · {{ e.location }}</span>
-            {% if verify_event(e) %}<em class="ok">Hash hợp lệ</em>{% else %}<em class="bad">Hash không khớp</em>{% endif %}
+            <br>
+            {% if verify_event(e) %}
+                <em class="ok">✓ Hash hợp lệ (Link: <code>{{ e.previous_hash[:8] }}...</code> &rarr; <code>{{ e.event_hash[:8] }}...</code>)</em>
+            {% else %}
+                <em class="bad">⚠ Hash không khớp (Dữ liệu bị sửa đổi!)</em>
+            {% endif %}
         </li>
         {% endfor %}
     </ol>
@@ -46,6 +51,7 @@
     <p>Chưa có timeline.</p>
     {% endif %}
 </section>
+
 
 <section class="card">
     <h2>Dữ liệu cảm biến gần đây</h2>
