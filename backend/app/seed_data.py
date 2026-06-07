@@ -3,7 +3,7 @@ import os
 import random
 from datetime import datetime, timedelta
 
-from app.database import Base, SessionLocals, engines, init_db
+from app.database import Base, SessionLocals, engines, init_db, get_active_node, sync_node_data
 from app.models import Batch, SensorReading, TraceEvent
 from app.services.hash_service import make_event_hash, make_sensor_hash
 from app.services.qr_service import generate_qr
@@ -353,18 +353,28 @@ def seed_all():
     print(f"  SEEDING {len(BATCHES)} lô sản phẩm | base_url={base_url}")
     print(f"{'='*55}\n")
 
-    # Seed all nodes
-    for node_name, session_class in SessionLocals.items():
-        print(f"--- Gieo dữ liệu cho Node: {node_name} ---")
-        db = session_class()
-        try:
-            for cfg in BATCHES:
-                print(f"[{cfg['batch_id']}] {cfg['product_name']}")
-                seed_batch(db, cfg, base_url)
-                print()
-            print(f"✅ Gieo dữ liệu hoàn tất cho {node_name}!")
-        finally:
-            db.close()
+    # Xác định node đang hoạt động (thường là node_a)
+    active_node = get_active_node() or "node_a"
+    print(f"--- Gieo dữ liệu cho Node chính: {active_node} ---")
+    
+    db = SessionLocals[active_node]()
+    try:
+        for cfg in BATCHES:
+            print(f"[{cfg['batch_id']}] {cfg['product_name']}")
+            seed_batch(db, cfg, base_url)
+            print()
+        print(f"✅ Gieo dữ liệu hoàn tất cho Node chính ({active_node})!")
+    finally:
+        db.close()
+
+    # Đồng bộ dữ liệu sang các node khác
+    print("\n--- Đồng bộ dữ liệu sang các node phụ ---")
+    for node_name in SessionLocals.keys():
+        if node_name == active_node:
+            continue
+        print(f"Đang đồng bộ {node_name}...")
+        res = sync_node_data(node_name)
+        print(f"Kết quả {node_name}: {res['status']} - {res.get('message', '')}")
 
 
 if __name__ == "__main__":
