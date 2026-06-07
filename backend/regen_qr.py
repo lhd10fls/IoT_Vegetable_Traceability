@@ -16,7 +16,7 @@ import sys
 # Phải chạy trước khi import app để DB path đúng
 os.makedirs("app/static/qr", exist_ok=True)
 
-from app.database import SessionLocal, init_db
+from app.database import SessionLocals, init_db, get_active_node, replicate_item
 from app.models import Batch
 from app.services.qr_service import generate_qr
 
@@ -34,7 +34,12 @@ def main():
     print(f"{'='*55}\n")
 
     init_db()
-    db = SessionLocal()
+    active_node = get_active_node()
+    if not active_node:
+        print("  Loi: Khong co node database nao online de cap nhat QR!")
+        return
+
+    db = SessionLocals[active_node]()
     try:
         batches = db.query(Batch).order_by(Batch.id).all()
         if not batches:
@@ -44,12 +49,13 @@ def main():
         for batch in batches:
             qr_path = generate_qr(batch_id=batch.batch_id, base_url=base_url)
             batch.qr_path = qr_path
+            db.commit()
+            replicate_item(batch) # Replicate updated qr_path to other online nodes
             trace_url = f"{base_url}/trace/{batch.batch_id}"
             print(f"  [{batch.batch_id}] {batch.product_name}")
             print(f"     QR path : {qr_path}")
             print(f"     QR link : {trace_url}")
 
-        db.commit()
         print(f"\n  Done! {len(batches)} QR da duoc cap nhat.")
         print(f"  Mo trinh duyet: {base_url}\n")
 
